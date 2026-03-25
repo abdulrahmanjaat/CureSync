@@ -12,6 +12,7 @@ import '../../features/auth/presentation/screens/signup_screen.dart';
 import '../../features/auth/presentation/screens/role_selection_screen.dart';
 import '../../features/patient/presentation/screens/patient_details_screen.dart';
 import '../../features/patient/presentation/screens/add_medication_screen.dart';
+import '../../features/patient/presentation/screens/patient_management_screen.dart';
 import '../../shared/navigation/main_wrapper.dart';
 import '../services/preferences_service.dart';
 
@@ -134,6 +135,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => AddMedicationScreen(
           patientId: state.pathParameters['id']!,
         ),
+      ),
+
+      // ── Patient management hub ──
+      GoRoute(
+        path: '/manage-patients',
+        builder: (context, state) => const PatientManagementScreen(),
       ),
     ],
   );

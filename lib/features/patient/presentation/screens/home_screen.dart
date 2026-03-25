@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../core/constants/app_colors.dart';
-import '../../../../shared/widgets/custom_bottom_sheet.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
-import '../providers/patient_provider.dart';
-import '../widgets/greeting_header.dart';
-import '../widgets/add_patient_sheet.dart';
+import '../providers/medication_provider.dart';
+import '../providers/active_patient_provider.dart';
+import '../widgets/dashboard/glass_card.dart';
+import '../widgets/dashboard/adherence_ring_widget.dart';
+import '../widgets/dashboard/smart_action_card.dart';
+import '../widgets/dashboard/pill_timeline.dart';
+import '../widgets/dashboard/vitals_bento.dart';
+import '../widgets/dashboard/wellness_strip.dart';
+import '../widgets/dashboard/quick_actions_row.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -16,292 +22,262 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authStateProvider).valueOrNull;
-    final patientsAsync = ref.watch(patientsStreamProvider);
+    final activeId = ref.watch(activePatientIdProvider);
+    final firstName = (user?.displayName ?? 'User').split(' ').first;
+
+    // Get next medication for the active patient
+    String? nextMedName;
+    String? nextMedTime;
+    if (activeId != null) {
+      final medsAsync = ref.watch(medicationsStreamProvider(activeId));
+      medsAsync.whenData((meds) {
+        final active = meds.where((m) => m.isActive).toList();
+        if (active.isNotEmpty && active.first.reminderTimes.isNotEmpty) {
+          nextMedName = active.first.name;
+          nextMedTime = active.first.reminderTimes.first;
+        }
+      });
+    }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFDFC),
-      body: SafeArea(
-        child: ListView(
-          padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 16.h),
-          children: [
-            /// ═══ GREETING ═══
-            GreetingHeader(
-              name: user?.displayName ?? 'User',
-              photoUrl: user?.photoURL,
-              onLogout: () =>
-                  ref.read(authControllerProvider.notifier).signOut(),
-            ),
-            SizedBox(height: 28.h),
-
-            /// ═══ SECTION TITLE ═══
-            Text(
-              'Patient Profiles',
-              style: TextStyle(
-                fontSize: 20.sp,
-                fontWeight: FontWeight.w800,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            SizedBox(height: 4.h),
-            Text(
-              'Manage health records for your family',
-              style: TextStyle(
-                fontSize: 14.sp,
-                color: AppColors.textSecondary,
-              ),
-            ),
-            SizedBox(height: 20.h),
-
-            /// ═══ 2-COLUMN GRID ═══
-            patientsAsync.when(
-              loading: () => SizedBox(
-                height: 160.h,
-                child: const Center(
-                  child:
-                      CircularProgressIndicator(color: AppColors.primary),
-                ),
-              ),
-              error: (e, _) => _ErrorTile(
-                error: e.toString(),
-                onRetry: () => ref.invalidate(patientsStreamProvider),
-              ),
-              data: (patients) {
-                // Build grid items: My Profile + each patient + Add card
-                final items = <Widget>[
-                  /// My Profile card (from auth user)
-                  _ProfileCard(
-                    name: user?.displayName ?? 'My Profile',
-                    subtitle: 'Your personal health',
-                    icon: Icons.person_rounded,
-                    gradient: const [Color(0xFF0D9488), Color(0xFF14B8A6)],
-                    onTap: () {
-                      // Navigate to own profile details
-                    },
-                  ),
-
-                  /// Patient cards
-                  ...patients.map((p) => _ProfileCard(
-                        name: p.name,
-                        subtitle: '${p.relation} · ${p.age} yrs',
-                        icon: Icons.favorite_rounded,
-                        code: p.accessCode,
-                        gradient: const [
-                          Color(0xFF0891B2),
-                          Color(0xFF06B6D4)
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF0B1F1E),
+              Color(0xFF0F2928),
+              Color(0xFF122D2B),
+              Color(0xFF0B1F1E),
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                /// ═══ GREETING ═══
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Welcome back,',
+                            style: GoogleFonts.inter(
+                              fontSize: 14.sp,
+                              color: Colors.white.withValues(alpha: 0.5),
+                            ),
+                          ),
+                          Text(
+                            '$firstName 👋',
+                            style: GoogleFonts.poppins(
+                              fontSize: 26.sp,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
                         ],
-                        onTap: () =>
-                            context.push('/patient/${p.patientId}'),
-                      )),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () {},
+                      child: Container(
+                        height: 42.w,
+                        width: 42.w,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(14.r),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.1),
+                          ),
+                        ),
+                        child: Icon(Icons.notifications_none_rounded,
+                            size: 22.w,
+                            color: const Color(0xFF5EEAD4)),
+                      ),
+                    ),
+                  ],
+                )
+                    .animate()
+                    .fadeIn(duration: 400.ms)
+                    .slideY(begin: -0.1, end: 0, duration: 400.ms),
 
-                  /// Add new member card
-                  _AddCard(
-                    onTap: () => _showAddSheet(context),
-                  ),
-                ];
+                SizedBox(height: 20.h),
 
-                return GridView.count(
-                  crossAxisCount: 2,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  mainAxisSpacing: 14.h,
-                  crossAxisSpacing: 14.w,
-                  childAspectRatio: 0.85,
-                  children: items,
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+                /// ═══ BENTO GRID: Adherence + Smart Action + Add Med ═══
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    /// Left: Adherence ring
+                    Expanded(
+                      flex: 3,
+                      child: const AdherenceRingWidget()
+                          .animate()
+                          .fadeIn(duration: 400.ms, delay: 100.ms)
+                          .scale(
+                            begin: const Offset(0.95, 0.95),
+                            duration: 400.ms,
+                            delay: 100.ms,
+                          ),
+                    ),
+                    SizedBox(width: 12.w),
 
-  void _showAddSheet(BuildContext context) {
-    CustomBottomSheet.show(
-      context: context,
-      useDraggable: false,
-      child: const AddPatientSheet(),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-class _ProfileCard extends StatelessWidget {
-  final String name;
-  final String subtitle;
-  final IconData icon;
-  final List<Color> gradient;
-  final String? code;
-  final VoidCallback onTap;
-
-  const _ProfileCard({
-    required this.name,
-    required this.subtitle,
-    required this.icon,
-    required this.gradient,
-    this.code,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: EdgeInsets.all(16.w),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(22.r),
-          border: Border.all(color: AppColors.divider.withValues(alpha: 0.5)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            /// Avatar
-            Container(
-              height: 48.w,
-              width: 48.w,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(colors: gradient),
-                borderRadius: BorderRadius.circular(16.r),
-              ),
-              child: Icon(icon, size: 24.w, color: Colors.white),
-            ),
-            SizedBox(height: 14.h),
-
-            Text(
-              name,
-              style: TextStyle(
-                fontSize: 16.sp,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            SizedBox(height: 2.h),
-            Text(
-              subtitle,
-              style: TextStyle(
-                fontSize: 12.sp,
-                color: AppColors.textSecondary,
-              ),
-            ),
-
-            const Spacer(),
-
-            if (code != null)
-              Container(
-                padding:
-                    EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryContainer,
-                  borderRadius: BorderRadius.circular(8.r),
+                    /// Right column
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        children: [
+                          SmartActionCard(
+                            medName: nextMedName,
+                            time: nextMedTime,
+                          )
+                              .animate()
+                              .fadeIn(duration: 400.ms, delay: 200.ms)
+                              .scale(
+                                begin: const Offset(0.95, 0.95),
+                                duration: 400.ms,
+                                delay: 200.ms,
+                              ),
+                          SizedBox(height: 12.h),
+                          GlassCard(
+                            onTap: () {
+                              if (activeId != null) {
+                                context
+                                    .push('/patient/$activeId/add-med');
+                              }
+                            },
+                            padding: EdgeInsets.all(14.w),
+                            child: Column(
+                              children: [
+                                Icon(Icons.medication_rounded,
+                                    size: 28.w,
+                                    color: const Color(0xFF5EEAD4)),
+                                SizedBox(height: 6.h),
+                                Text(
+                                  "Add Med'",
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12.sp,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white.withValues(alpha: 0.8),
+                                  ),
+                                ),
+                                Text(
+                                  'Add Medication\nForm',
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 9.sp,
+                                    color:
+                                        Colors.white.withValues(alpha: 0.4),
+                                  ),
+                                ),
+                                SizedBox(height: 8.h),
+                                Container(
+                                  height: 28.w,
+                                  width: 28.w,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFF6B6B),
+                                    borderRadius:
+                                        BorderRadius.circular(8.r),
+                                  ),
+                                  child: Icon(Icons.add_rounded,
+                                      size: 18.w, color: Colors.white),
+                                ),
+                              ],
+                            ),
+                          )
+                              .animate()
+                              .fadeIn(duration: 400.ms, delay: 300.ms)
+                              .scale(
+                                begin: const Offset(0.95, 0.95),
+                                duration: 400.ms,
+                                delay: 300.ms,
+                              ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                child: Text(
-                  code!,
-                  style: TextStyle(
-                    fontSize: 12.sp,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.primaryDark,
-                    letterSpacing: 2,
+
+                SizedBox(height: 16.h),
+
+                /// ═══ PILL TIMELINE ═══
+                const PillTimeline()
+                    .animate()
+                    .fadeIn(duration: 400.ms, delay: 350.ms)
+                    .scale(
+                      begin: const Offset(0.95, 0.95),
+                      duration: 400.ms,
+                      delay: 350.ms,
+                    ),
+
+                SizedBox(height: 16.h),
+
+                /// ═══ WELLNESS STRIP ═══
+                const WellnessStrip()
+                    .animate()
+                    .fadeIn(duration: 400.ms, delay: 400.ms),
+
+                SizedBox(height: 16.h),
+
+                /// ═══ VITALS ═══
+                const VitalsBento()
+                    .animate()
+                    .fadeIn(duration: 400.ms, delay: 450.ms)
+                    .scale(
+                      begin: const Offset(0.95, 0.95),
+                      duration: 400.ms,
+                      delay: 450.ms,
+                    ),
+
+                SizedBox(height: 20.h),
+
+                /// ═══ QUICK ACTIONS ═══
+                const QuickActionsRow()
+                    .animate()
+                    .fadeIn(duration: 400.ms, delay: 500.ms),
+
+                SizedBox(height: 24.h),
+
+                /// ═══ PATIENT/CAREGIVER MANAGEMENT LINK ═══
+                GlassCard(
+                  onTap: () => context.push('/manage-patients'),
+                  padding:
+                      EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+                  child: Row(
+                    children: [
+                      Icon(Icons.people_rounded,
+                          size: 22.w, color: const Color(0xFF5EEAD4)),
+                      SizedBox(width: 12.w),
+                      Expanded(
+                        child: Text(
+                          'Patient/Caregiver Management',
+                          style: GoogleFonts.inter(
+                            fontSize: 14.sp,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white.withValues(alpha: 0.85),
+                          ),
+                        ),
+                      ),
+                      Icon(Icons.chevron_right_rounded,
+                          size: 20.w,
+                          color: Colors.white.withValues(alpha: 0.4)),
+                    ],
                   ),
-                ),
-              )
-            else
-              Icon(Icons.arrow_forward_rounded,
-                  size: 18.w, color: AppColors.textHint),
-          ],
-        ),
-      ),
-    );
-  }
-}
+                )
+                    .animate()
+                    .fadeIn(duration: 400.ms, delay: 550.ms),
 
-class _AddCard extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _AddCard({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.accent.withValues(alpha: 0.04),
-          borderRadius: BorderRadius.circular(22.r),
-          border: Border.all(
-            color: AppColors.accent.withValues(alpha: 0.2),
-            width: 1.5,
+                SizedBox(height: 24.h),
+              ],
+            ),
           ),
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              height: 52.w,
-              width: 52.w,
-              decoration: BoxDecoration(
-                color: AppColors.accent.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(16.r),
-              ),
-              child:
-                  Icon(Icons.add_rounded, size: 28.w, color: AppColors.accent),
-            ),
-            SizedBox(height: 12.h),
-            Text(
-              'Add Family\nMember',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14.sp,
-                fontWeight: FontWeight.w600,
-                color: AppColors.accent,
-                height: 1.3,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorTile extends StatelessWidget {
-  final String error;
-  final VoidCallback onRetry;
-
-  const _ErrorTile({required this.error, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.all(20.w),
-      decoration: BoxDecoration(
-        color: AppColors.error.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(16.r),
-      ),
-      child: Column(
-        children: [
-          Text(error,
-              style: TextStyle(fontSize: 12.sp, color: AppColors.textHint)),
-          SizedBox(height: 10.h),
-          GestureDetector(
-            onTap: onRetry,
-            child: Text('Retry',
-                style: TextStyle(
-                    fontSize: 14.sp,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primary)),
-          ),
-        ],
       ),
     );
   }
