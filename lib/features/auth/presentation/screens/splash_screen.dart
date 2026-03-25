@@ -1,8 +1,10 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/services/preferences_service.dart';
 import '../../../../shared/widgets/cure_sync_logo.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -37,9 +39,18 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _navigateNext() async {
-    await Future.delayed(const Duration(seconds: 3));
+    await Future.delayed(const Duration(seconds: 2));
     if (!mounted) return;
-    context.go('/onboarding');
+
+    final isLoggedIn = FirebaseAuth.instance.currentUser != null;
+
+    if (isLoggedIn) {
+      context.go('/dashboard');
+    } else if (PreferencesService.hasSeenOnboarding) {
+      context.go('/login-option');
+    } else {
+      context.go('/onboarding');
+    }
   }
 
   @override

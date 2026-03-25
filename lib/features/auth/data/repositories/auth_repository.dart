@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import '../../../../core/services/secure_storage_service.dart';
 import '../models/user_model.dart';
 
 class AuthRepository {
@@ -108,7 +109,10 @@ class AuthRepository {
 
   // ─── Role ────────────────────────────────────────────────────
   Future<void> updateUserRole(String uid, String role) async {
-    await _firestore.collection('users').doc(uid).update({'role': role});
+    await _firestore.collection('users').doc(uid).set(
+      {'role': role},
+      SetOptions(merge: true),
+    );
   }
 
   Future<UserModel?> getUserData(String uid) async {
@@ -117,11 +121,40 @@ class AuthRepository {
     return UserModel.fromFirestore(doc);
   }
 
+  /// Real-time stream of user data — router watches this for role changes
+  Stream<UserModel?> userDataStream(String uid) {
+    return _firestore
+        .collection('users')
+        .doc(uid)
+        .snapshots()
+        .map((doc) => doc.exists ? UserModel.fromFirestore(doc) : null);
+  }
+
+  // ─── Remember Me ──────────────────────────────────────────────
+  Future<void> saveRememberMe(String email, String password) async {
+    await SecureStorageService.saveCredentials(
+      email: email,
+      password: password,
+    );
+  }
+
+  Future<({String? email, String? password})> getRememberedCredentials() {
+    return SecureStorageService.getCredentials();
+  }
+
+  Future<bool> isRememberMeEnabled() {
+    return SecureStorageService.isRememberMeEnabled();
+  }
+
   // ─── Sign Out ────────────────────────────────────────────────
   Future<void> signOut() async {
     await Future.wait([
       _auth.signOut(),
       _googleSignIn.signOut(),
     ]);
+    // Clear secure storage separately — may fail on hot restart
+    try {
+      await SecureStorageService.clearCredentials();
+    } catch (_) {}
   }
 }

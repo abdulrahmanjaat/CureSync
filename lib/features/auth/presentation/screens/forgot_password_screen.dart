@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/snackbar_service.dart';
 import '../../../../shared/widgets/custom_button.dart';
 import '../../../../shared/widgets/custom_text_field.dart';
 import '../providers/auth_provider.dart';
@@ -37,12 +38,7 @@ class _ForgotPasswordSheetState extends ConsumerState<ForgotPasswordSheet> {
     if (result.success) {
       setState(() => _emailSent = true);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.error ?? 'Failed to send reset email'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      SnackbarService.showError(result.error ?? 'Failed to send reset email');
     }
   }
 

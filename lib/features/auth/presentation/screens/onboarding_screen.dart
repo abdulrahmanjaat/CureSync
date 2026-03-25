@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/services/preferences_service.dart';
 import '../../../../shared/widgets/custom_button.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -55,7 +56,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               child: Padding(
                 padding: EdgeInsets.only(top: 12.h, right: 20.w),
                 child: GestureDetector(
-                  onTap: () => context.go('/login-option'),
+                  onTap: () {
+                    PreferencesService.setOnboardingSeen();
+                    context.go('/login-option');
+                  },
                   child: Text(
                     'Skip',
                     style: TextStyle(
@@ -112,6 +116,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           curve: Curves.easeInOut,
                         );
                       } else {
+                        PreferencesService.setOnboardingSeen();
                         context.go('/login-option');
                       }
                     },

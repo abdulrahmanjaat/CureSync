@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -8,42 +10,85 @@ import '../../features/auth/presentation/screens/login_option_screen.dart';
 import '../../features/auth/presentation/screens/login_screen.dart';
 import '../../features/auth/presentation/screens/signup_screen.dart';
 import '../../features/auth/presentation/screens/role_selection_screen.dart';
-import '../../features/auth/presentation/screens/dashboard_placeholder_screen.dart';
+import '../../features/patient/presentation/screens/patient_details_screen.dart';
+import '../../features/patient/presentation/screens/add_medication_screen.dart';
+import '../../shared/navigation/main_wrapper.dart';
+import '../services/preferences_service.dart';
+
+class _RouterNotifier extends ChangeNotifier {
+  _RouterNotifier(Ref ref) {
+    _authSub = ref.listen(authStateProvider, (_, _) {
+      debugPrint('DEBUG ROUTER: authState changed');
+      notifyListeners();
+    });
+    _userSub = ref.listen(currentUserDataProvider, (_, _) {
+      debugPrint('DEBUG ROUTER: userData changed');
+      notifyListeners();
+    });
+  }
+
+  late final ProviderSubscription _authSub;
+  late final ProviderSubscription _userSub;
+
+  @override
+  void dispose() {
+    _authSub.close();
+    _userSub.close();
+    super.dispose();
+  }
+}
 
 final routerProvider = Provider<GoRouter>((ref) {
-  final authState = ref.watch(authStateProvider);
+  final notifier = _RouterNotifier(ref);
+  ref.onDispose(() => notifier.dispose());
 
   return GoRouter(
     initialLocation: '/',
+    refreshListenable: notifier,
     redirect: (context, state) {
+      final authState = ref.read(authStateProvider);
+      final userData = ref.read(currentUserDataProvider);
       final isLoggedIn = authState.valueOrNull != null;
+      final role = userData.valueOrNull?.role;
       final currentPath = state.uri.path;
 
-      // Auth screens that don't require login
-      const authPaths = [
-        '/',
+      debugPrint('DEBUG ROUTER: path=$currentPath, '
+          'loggedIn=$isLoggedIn, role=$role');
+
+      // ── Splash: always allow ──
+      if (currentPath == '/') return null;
+
+      // ── Public pages ──
+      const publicPaths = {
         '/onboarding',
         '/login-option',
         '/login',
         '/signup',
-      ];
-      final isOnAuthPage = authPaths.contains(currentPath);
+      };
+      final isOnPublicPage = publicPaths.contains(currentPath);
 
-      // If logged in and on auth page, go to dashboard
-      // (skip splash/onboarding/login)
-      if (isLoggedIn && isOnAuthPage) {
-        // Allow role-selection since user may need to pick role
+      // CASE 1: Not logged in
+      if (!isLoggedIn) {
+        if (isOnPublicPage) return null;
+        final hasSeenOnboarding = PreferencesService.hasSeenOnboarding;
+        return hasSeenOnboarding ? '/login-option' : '/onboarding';
+      }
+
+      // CASE 2: Logged in but NO role
+      if (role == null) {
+        if (currentPath == '/role-selection') return null;
+        return '/role-selection';
+      }
+
+      // CASE 3: Logged in WITH role
+      if (isOnPublicPage || currentPath == '/role-selection') {
         return '/dashboard';
       }
 
-      // If not logged in and trying to access protected page
-      if (!isLoggedIn && !isOnAuthPage && currentPath != '/role-selection') {
-        return '/login-option';
-      }
-
-      return null; // no redirect
+      return null;
     },
     routes: [
+      // ── Auth routes ──
       GoRoute(
         path: '/',
         builder: (context, state) => const SplashScreen(),
@@ -68,9 +113,27 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/role-selection',
         builder: (context, state) => const RoleSelectionScreen(),
       ),
+
+      // ── Main app (bottom nav) ──
       GoRoute(
         path: '/dashboard',
-        builder: (context, state) => const DashboardPlaceholderScreen(),
+        builder: (context, state) => const MainWrapper(),
+      ),
+
+      // ── Patient detail ──
+      GoRoute(
+        path: '/patient/:id',
+        builder: (context, state) => PatientDetailsScreen(
+          patientId: state.pathParameters['id']!,
+        ),
+      ),
+
+      // ── Add medication ──
+      GoRoute(
+        path: '/patient/:id/add-med',
+        builder: (context, state) => AddMedicationScreen(
+          patientId: state.pathParameters['id']!,
+        ),
       ),
     ],
   );

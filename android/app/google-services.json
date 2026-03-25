@@ -12,7 +12,20 @@
           "package_name": "com.armatrix.curesync"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "25254260501-u7l6edhm471lrne5fbg0a3vlndq3g483.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.armatrix.curesync",
+            "certificate_hash": "a5062ca5b3f28a1d5ef778ba6be0da76c7a8c5d0"
+          }
+        },
+        {
+          "client_id": "25254260501-2mud8cjd8i5ktuhu46of5849js4hrmlr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDdRPuoGYJuS0GZ-SmdtMT36iDkIsKGy4E"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "25254260501-2mud8cjd8i5ktuhu46of5849js4hrmlr.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

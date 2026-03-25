@@ -15,9 +15,15 @@ final authStateProvider = StreamProvider<User?>((ref) {
   return ref.watch(authRepositoryProvider).authStateChanges;
 });
 
-// ─── User Data (Firestore) ──────────────────────────────────────
-final userDataProvider = FutureProvider.family<UserModel?, String>((ref, uid) {
-  return ref.watch(authRepositoryProvider).getUserData(uid);
+// ─── User Firestore Data (auto-refreshes with auth state) ───────
+final currentUserDataProvider = StreamProvider<UserModel?>((ref) {
+  final authState = ref.watch(authStateProvider);
+  final user = authState.valueOrNull;
+  if (user == null) return Stream.value(null);
+
+  return ref
+      .watch(authRepositoryProvider)
+      .userDataStream(user.uid);
 });
 
 // ─── Auth Controller ────────────────────────────────────────────
@@ -33,60 +39,56 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
 
   AuthRepository get _repo => _ref.read(authRepositoryProvider);
 
-  Future<({bool success, bool isNewUser, String? error})> signUpWithEmail({
+  Future<({bool success, String? error})> signUpWithEmail({
     required String name,
     required String email,
     required String password,
   }) async {
     state = const AsyncLoading();
     try {
-      final result = await _repo.signUpWithEmail(
+      await _repo.signUpWithEmail(
         name: name,
         email: email,
         password: password,
       );
       state = const AsyncData(null);
-      return (success: true, isNewUser: result.isNewUser, error: null);
+      return (success: true, error: null);
     } on FirebaseAuthException catch (e) {
       state = AsyncError(e, StackTrace.current);
-      return (success: false, isNewUser: false, error: _mapAuthError(e.code));
+      return (success: false, error: _mapAuthError(e.code));
     }
   }
 
-  Future<({bool success, bool isNewUser, String? error})> signInWithEmail({
+  Future<({bool success, String? error})> signInWithEmail({
     required String email,
     required String password,
   }) async {
     state = const AsyncLoading();
     try {
-      final user = await _repo.signInWithEmail(
+      await _repo.signInWithEmail(
         email: email,
         password: password,
       );
-      // Check if user has a role set
-      final userData = await _repo.getUserData(user.uid);
-      final hasRole = userData?.role != null;
       state = const AsyncData(null);
-      return (success: true, isNewUser: !hasRole, error: null);
+      return (success: true, error: null);
     } on FirebaseAuthException catch (e) {
       state = AsyncError(e, StackTrace.current);
-      return (success: false, isNewUser: false, error: _mapAuthError(e.code));
+      return (success: false, error: _mapAuthError(e.code));
     }
   }
 
-  Future<({bool success, bool isNewUser, String? error})>
-      signInWithGoogle() async {
+  Future<({bool success, String? error})> signInWithGoogle() async {
     state = const AsyncLoading();
     try {
-      final result = await _repo.signInWithGoogle();
+      await _repo.signInWithGoogle();
       state = const AsyncData(null);
-      return (success: true, isNewUser: result.isNewUser, error: null);
+      return (success: true, error: null);
     } on FirebaseAuthException catch (e) {
       state = AsyncError(e, StackTrace.current);
-      return (success: false, isNewUser: false, error: _mapAuthError(e.code));
+      return (success: false, error: _mapAuthError(e.code));
     } catch (e) {
       state = AsyncError(e, StackTrace.current);
-      return (success: false, isNewUser: false, error: e.toString());
+      return (success: false, error: e.toString());
     }
   }
 

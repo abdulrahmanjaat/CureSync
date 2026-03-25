@@ -4,31 +4,17 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../providers/auth_provider.dart';
-import '../providers/role_provider.dart';
 
 class DashboardPlaceholderScreen extends ConsumerWidget {
   const DashboardPlaceholderScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final role = ref.watch(roleProvider);
     final authState = ref.watch(authStateProvider);
+    final userData = ref.watch(currentUserDataProvider);
     final user = authState.valueOrNull;
-    final isPatient = role == UserRole.patient;
-
-    // Load role from Firestore if not set locally
-    if (role == null && user != null) {
-      ref.listen(userDataProvider(user.uid), (_, next) {
-        next.whenData((userData) {
-          if (userData?.role != null) {
-            final firestoreRole = userData!.role == 'patient'
-                ? UserRole.patient
-                : UserRole.caregiver;
-            ref.read(roleProvider.notifier).selectRole(firestoreRole);
-          }
-        });
-      });
-    }
+    final role = userData.valueOrNull?.role;
+    final isPatient = role == 'patient';
 
     return Scaffold(
       backgroundColor: AppColors.scaffold,

@@ -23,6 +23,7 @@ class CustomTextField extends StatefulWidget {
   final ValueChanged<String>? onChanged;
   final bool isOptional;
   final int maxLines;
+  final Iterable<String>? autofillHints;
 
   const CustomTextField({
     super.key,
@@ -43,6 +44,7 @@ class CustomTextField extends StatefulWidget {
     this.onChanged,
     this.isOptional = false,
     this.maxLines = 1,
+    this.autofillHints,
   });
 
   @override
@@ -132,6 +134,7 @@ class _CustomTextFieldState extends State<CustomTextField> {
           onEditingComplete: widget.onEditingComplete,
           onChanged: widget.onChanged,
           maxLines: widget.maxLines,
+          autofillHints: widget.autofillHints,
           decoration: InputDecoration(
             hintText: widget.hint,
             prefixIcon: widget.prefixIcon,

@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_images.dart';
+import '../../../../core/utils/snackbar_service.dart';
 import '../../../../shared/widgets/cure_sync_logo.dart';
 import '../providers/auth_provider.dart';
 
@@ -73,16 +74,10 @@ class _LoginOptionScreenState extends ConsumerState<LoginOptionScreen>
 
     if (!ctx.mounted) return;
 
-    if (result.success) {
-      ctx.go(result.isNewUser ? '/role-selection' : '/dashboard');
-    } else if (result.error != null && result.error != 'Sign-in was cancelled') {
-      ScaffoldMessenger.of(ctx).showSnackBar(
-        SnackBar(
-          content: Text(result.error!),
-          backgroundColor: AppColors.error,
-        ),
-      );
+    if (!result.success && result.error != null && result.error != 'Sign-in was cancelled') {
+      SnackbarService.showError(result.error!);
     }
+    // Router redirect handles navigation based on role
   }
 
   @override
