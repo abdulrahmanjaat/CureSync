@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "25254260501",
+    "project_id": "curesync-ec9fc",
+    "storage_bucket": "curesync-ec9fc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:25254260501:android:a1605ff049fa4879f8c31c",
+        "android_client_info": {
+          "package_name": "com.armatrix.curesync"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDdRPuoGYJuS0GZ-SmdtMT36iDkIsKGy4E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
