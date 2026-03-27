@@ -1,9 +1,10 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../../features/auth/presentation/providers/auth_provider.dart';
 import '../../features/patient/presentation/screens/home_screen.dart';
 import '../../features/patient/presentation/screens/medications_screen.dart';
 import '../../features/patient/presentation/screens/profile_screen.dart';
@@ -24,141 +25,124 @@ class _MainWrapperState extends ConsumerState<MainWrapper> {
     ProfileScreen(),
   ];
 
+  final _navItems = const [
+    _NavData(icon: Icons.home_rounded, label: 'Home'),
+    _NavData(icon: Icons.medication_rounded, label: 'Meds'),
+    _NavData(icon: Icons.person_rounded, label: 'Profile'),
+  ];
+
   @override
   Widget build(BuildContext context) {
-    final user = ref.watch(authStateProvider).valueOrNull;
-    final initial = (user?.displayName ?? 'U')[0].toUpperCase();
-
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
         children: _screens,
       ),
       extendBody: true,
-      bottomNavigationBar: Container(
-        margin: EdgeInsets.fromLTRB(24.w, 0, 24.w, 20.h),
-        padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 10.h),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A2F2E).withValues(alpha: 0.95),
-          borderRadius: BorderRadius.circular(28.r),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
-              blurRadius: 24,
-              offset: const Offset(0, 8),
-            ),
-          ],
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.06),
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _DockItem(
-              icon: Icons.home_rounded,
-              label: 'Home',
-              isActive: _currentIndex == 0,
-              onTap: () => setState(() => _currentIndex = 0),
-            ),
-            _DockItem(
-              icon: Icons.medication_rounded,
-              label: 'Meds',
-              isActive: _currentIndex == 1,
-              onTap: () => setState(() => _currentIndex = 1),
-            ),
-            /// Avatar tab
-            GestureDetector(
-              onTap: () => setState(() => _currentIndex = 2),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 250),
-                padding: EdgeInsets.all(_currentIndex == 2 ? 3.w : 0),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: _currentIndex == 2
-                      ? Border.all(
-                          color: const Color(0xFF0D9488),
-                          width: 2,
-                        )
-                      : null,
-                ),
-                child: CircleAvatar(
-                  radius: 16.w,
-                  backgroundColor: const Color(0xFF0D9488).withValues(alpha: 0.3),
-                  backgroundImage:
-                      user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
-                  child: user?.photoURL == null
-                      ? Text(
-                          initial,
-                          style: GoogleFonts.poppins(
-                            fontSize: 13.sp,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        )
-                      : null,
-                ),
-              ),
-            ),
-          ],
-        ),
+      bottomNavigationBar: _FloatingNavBar(
+        currentIndex: _currentIndex,
+        items: _navItems,
+        onTap: (i) {
+          HapticFeedback.lightImpact();
+          setState(() => _currentIndex = i);
+        },
       ),
     );
   }
 }
 
-class _DockItem extends StatelessWidget {
+class _NavData {
   final IconData icon;
   final String label;
-  final bool isActive;
-  final VoidCallback onTap;
+  const _NavData({required this.icon, required this.label});
+}
 
-  const _DockItem({
-    required this.icon,
-    required this.label,
-    required this.isActive,
+class _FloatingNavBar extends StatelessWidget {
+  final int currentIndex;
+  final List<_NavData> items;
+  final ValueChanged<int> onTap;
+
+  const _FloatingNavBar({
+    required this.currentIndex,
+    required this.items,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        padding: EdgeInsets.symmetric(
-          horizontal: isActive ? 16.w : 12.w,
-          vertical: 8.h,
-        ),
-        decoration: BoxDecoration(
-          color: isActive
-              ? const Color(0xFF0D9488).withValues(alpha: 0.2)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(16.r),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 22.w,
-              color: isActive
-                  ? const Color(0xFF5EEAD4)
-                  : Colors.white.withValues(alpha: 0.4),
-            ),
-            if (isActive) ...[
-              SizedBox(width: 6.w),
-              Text(
-                label,
-                style: GoogleFonts.inter(
-                  fontSize: 13.sp,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF5EEAD4),
+    return Container(
+      margin: EdgeInsets.fromLTRB(32.w, 0, 32.w, 24.h),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(100.r),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            height: 64.h,
+            padding: EdgeInsets.symmetric(horizontal: 6.w),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1C1C1E).withValues(alpha: 0.92),
+              borderRadius: BorderRadius.circular(100.r),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 30,
+                  offset: const Offset(0, 10),
                 ),
-              ),
-            ],
-          ],
+              ],
+            ),
+            child: Row(
+              children: List.generate(items.length, (i) {
+                final isActive = i == currentIndex;
+                final item = items[i];
+
+                return Expanded(
+                  child: GestureDetector(
+                    onTap: () => onTap(i),
+                    behavior: HitTestBehavior.opaque,
+                    child: Center(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutCubic,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isActive ? 18.w : 12.w,
+                          vertical: 10.h,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isActive
+                              ? const Color(0xFF0D9488)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(100.r),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              item.icon,
+                              size: 22.w,
+                              color: isActive
+                                  ? Colors.white
+                                  : Colors.white.withValues(alpha: 0.45),
+                            ),
+                            if (isActive) ...[
+                              SizedBox(width: 6.w),
+                              Text(
+                                item.label,
+                                style: GoogleFonts.inter(
+                                  fontSize: 13.sp,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
         ),
       ),
     );

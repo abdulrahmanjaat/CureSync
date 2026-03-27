@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'glass_card.dart';
+import 'bento_card.dart';
 
 class AdherenceRingWidget extends StatelessWidget {
   final double percentage;
@@ -19,7 +19,7 @@ class AdherenceRingWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassCard(
+    return BentoCard(
       padding: EdgeInsets.all(18.w),
       child: Column(
         children: [
@@ -30,19 +30,14 @@ class AdherenceRingWidget extends StatelessWidget {
               painter: _RingPainter(progress: percentage),
               child: Center(
                 child: Container(
-                  height: 56.w,
-                  width: 56.w,
+                  height: 52.w,
+                  width: 52.w,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [
-                        const Color(0xFF0D9488).withValues(alpha: 0.3),
-                        const Color(0xFF14B8A6).withValues(alpha: 0.1),
-                      ],
-                    ),
+                    color: const Color(0xFF0D9488).withValues(alpha: 0.08),
                   ),
                   child: Icon(Icons.medication_rounded,
-                      size: 28.w, color: const Color(0xFF5EEAD4)),
+                      size: 26.w, color: const Color(0xFF0D9488)),
                 ),
               ),
             ),
@@ -52,14 +47,14 @@ class AdherenceRingWidget extends StatelessWidget {
             'Taken: $taken doses',
             style: GoogleFonts.inter(
               fontSize: 11.sp,
-              color: Colors.white.withValues(alpha: 0.6),
+              color: const Color(0xFF94A3B8),
             ),
           ),
           Text(
             'Remaining: $remaining dose',
             style: GoogleFonts.inter(
               fontSize: 11.sp,
-              color: Colors.white.withValues(alpha: 0.6),
+              color: const Color(0xFF94A3B8),
             ),
           ),
           SizedBox(height: 8.h),
@@ -68,14 +63,14 @@ class AdherenceRingWidget extends StatelessWidget {
             style: GoogleFonts.poppins(
               fontSize: 32.sp,
               fontWeight: FontWeight.w800,
-              color: Colors.white,
+              color: const Color(0xFF0F172A),
             ),
           ),
           Text(
             "Today's Goal",
             style: GoogleFonts.inter(
               fontSize: 12.sp,
-              color: Colors.white.withValues(alpha: 0.5),
+              color: const Color(0xFF94A3B8),
             ),
           ),
         ],
@@ -100,7 +95,7 @@ class _RingPainter extends CustomPainter {
       center,
       radius,
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.08)
+        ..color = const Color(0xFFE2E8F0).withValues(alpha: 0.5)
         ..style = PaintingStyle.stroke
         ..strokeWidth = strokeW,
     );
@@ -124,7 +119,7 @@ class _RingPainter extends CustomPainter {
       progressPaint,
     );
 
-    // Coral accent at end
+    // Coral accent dot at end
     if (progress > 0) {
       final endAngle = -pi / 2 + 2 * pi * progress;
       final dotX = center.dx + radius * cos(endAngle);

@@ -1,4 +1,6 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
@@ -29,23 +31,63 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
   bool _isLoading = false;
 
   Future<void> _pickTime() async {
-    final time = await showTimePicker(
+    TimeOfDay selected = TimeOfDay.now();
+
+    await showCupertinoModalPopup(
       context: context,
-      initialTime: TimeOfDay.now(),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: Theme.of(context).colorScheme.copyWith(
-                  primary: AppColors.primary,
-                ),
-          ),
-          child: child!,
-        );
-      },
+      builder: (_) => Container(
+        height: 280.h,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Text('Cancel',
+                        style: TextStyle(
+                            fontSize: 16.sp, color: AppColors.textSecondary)),
+                  ),
+                  Text('Select Time',
+                      style: TextStyle(
+                          fontSize: 16.sp,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary)),
+                  GestureDetector(
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      setState(() => _reminderTimes.add(selected));
+                      Navigator.pop(context);
+                    },
+                    child: Text('Done',
+                        style: TextStyle(
+                            fontSize: 16.sp,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary)),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: CupertinoDatePicker(
+                mode: CupertinoDatePickerMode.time,
+                initialDateTime: DateTime.now(),
+                onDateTimeChanged: (dt) {
+                  HapticFeedback.selectionClick();
+                  selected = TimeOfDay.fromDateTime(dt);
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
     );
-    if (time != null) {
-      setState(() => _reminderTimes.add(time));
-    }
   }
 
   String _formatTime(TimeOfDay t) =>
