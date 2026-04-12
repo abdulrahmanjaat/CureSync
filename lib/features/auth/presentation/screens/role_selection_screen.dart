@@ -3,9 +3,9 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
-import '../../../../core/utils/snackbar_service.dart';
 import '../providers/auth_provider.dart';
 import '../providers/role_provider.dart';
 
@@ -39,26 +39,30 @@ const _nodes = [
     color: Color(0xFF0D9488),
   ),
   _Node(
-    id: 'caregiver',
-    label: 'Caregiver',
-    icon: Icons.favorite_border_rounded,
+    id: 'pro_caregiver',
+    label: 'Pro Caregiver',
+    icon: Icons.badge_rounded,
     description:
-        'Monitor your loved ones\' health remotely and receive real-time critical alerts.',
-    role: UserRole.caregiver,
+        'Professional healthcare worker — set rates, manage multiple patients and get discovered.',
+    role: UserRole.proCaegiver,
     color: Color(0xFF0891B2),
   ),
   _Node(
     id: 'family',
     label: 'Family',
     icon: Icons.people_outline_rounded,
-    description: 'View shared health updates from your family circle.',
+    description:
+        'Monitor a loved one\'s health remotely. Link via access code for real-time updates.',
+    role: UserRole.family,
     color: Color(0xFF7C3AED),
   ),
   _Node(
-    id: 'doctor',
-    label: 'Doctor',
-    icon: Icons.local_hospital_outlined,
-    description: 'Access patient records and manage consultations.',
+    id: 'manager',
+    label: 'Manager',
+    icon: Icons.manage_accounts_rounded,
+    description:
+        'Oversee multiple patients, hire caregivers and coordinate full care teams from one dashboard.',
+    role: UserRole.manager,
     color: Color(0xFFDB2777),
   ),
   _Node(
@@ -126,9 +130,13 @@ class _RoleSelectionScreenState extends ConsumerState<RoleSelectionScreen>
     await ref
         .read(authControllerProvider.notifier)
         .updateRole(_selected!.role!);
-    if (mounted) {
-      SnackbarService.showSuccess(
-          'Welcome! You\'re all set as ${_selected!.label}');
+    if (!mounted) return;
+    if (_selected!.id == 'pro_caregiver') {
+      // Pro-Caregiver goes to onboarding to set rates + specializations
+      context.go('/caregiver/onboarding');
+    } else {
+      // Patient, Family, and Manager go directly to their dashboard
+      context.go('/dashboard');
     }
   }
 

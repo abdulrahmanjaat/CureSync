@@ -29,7 +29,7 @@ class PatientRepository {
     required int age,
     required String relation,
   }) async {
-    final code = await _generateUniqueCode();
+    final code = PatientModel.generateAccessCode();
     final doc = _firestore.collection('patients').doc();
     final patient = PatientModel(
       patientId: doc.id,
@@ -47,20 +47,5 @@ class PatientRepository {
   /// Delete a patient profile
   Future<void> deletePatient(String patientId) async {
     await _firestore.collection('patients').doc(patientId).delete();
-  }
-
-  /// Generate a unique 5-digit code not already in use
-  Future<String> _generateUniqueCode() async {
-    for (int attempt = 0; attempt < 10; attempt++) {
-      final code = PatientModel.generateAccessCode();
-      final existing = await _firestore
-          .collection('patients')
-          .where('accessCode', isEqualTo: code)
-          .limit(1)
-          .get();
-      if (existing.docs.isEmpty) return code;
-    }
-    // Extremely unlikely fallback
-    return PatientModel.generateAccessCode();
   }
 }

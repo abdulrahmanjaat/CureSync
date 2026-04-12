@@ -11,8 +11,13 @@ import '../providers/medication_provider.dart';
 import '../../data/models/medication_model.dart';
 class PatientDetailsScreen extends ConsumerWidget {
   final String patientId;
+  final bool readOnly;
 
-  const PatientDetailsScreen({super.key, required this.patientId});
+  const PatientDetailsScreen({
+    super.key,
+    required this.patientId,
+    this.readOnly = false,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -74,30 +79,31 @@ class PatientDetailsScreen extends ConsumerWidget {
                           ],
                         ),
                       ),
-                      GestureDetector(
-                        onTap: () {
-                          Clipboard.setData(
-                              ClipboardData(text: patient.accessCode));
-                          SnackbarService.showSuccess('Code copied');
-                        },
-                        child: Container(
-                          padding: EdgeInsets.symmetric(
-                              horizontal: 10.w, vertical: 6.h),
-                          decoration: BoxDecoration(
-                            color: AppColors.primaryContainer,
-                            borderRadius: BorderRadius.circular(10.r),
-                          ),
-                          child: Text(
-                            patient.accessCode,
-                            style: TextStyle(
-                              fontSize: 14.sp,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.primaryDark,
-                              letterSpacing: 2,
+                      if (!readOnly)
+                        GestureDetector(
+                          onTap: () {
+                            Clipboard.setData(
+                                ClipboardData(text: patient.accessCode));
+                            SnackbarService.showSuccess('Code copied');
+                          },
+                          child: Container(
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 10.w, vertical: 6.h),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryContainer,
+                              borderRadius: BorderRadius.circular(10.r),
+                            ),
+                            child: Text(
+                              patient.accessCode,
+                              style: TextStyle(
+                                fontSize: 14.sp,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.primaryDark,
+                                letterSpacing: 2,
+                              ),
                             ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                   SizedBox(height: 24.h),
@@ -127,34 +133,35 @@ class PatientDetailsScreen extends ConsumerWidget {
                           color: AppColors.textPrimary,
                         ),
                       ),
-                      GestureDetector(
-                        onTap: () =>
-                            context.push('/patient/$patientId/add-med'),
-                        child: Container(
-                          padding: EdgeInsets.symmetric(
-                              horizontal: 12.w, vertical: 6.h),
-                          decoration: BoxDecoration(
-                            gradient: AppColors.primaryGradient,
-                            borderRadius: BorderRadius.circular(100.r),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.add_rounded,
-                                  size: 16.w, color: Colors.white),
-                              SizedBox(width: 4.w),
-                              Text(
-                                'Add Med',
-                                style: TextStyle(
-                                  fontSize: 12.sp,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
+                      if (!readOnly)
+                        GestureDetector(
+                          onTap: () =>
+                              context.push('/patient/$patientId/add-med'),
+                          child: Container(
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 12.w, vertical: 6.h),
+                            decoration: BoxDecoration(
+                              gradient: AppColors.primaryGradient,
+                              borderRadius: BorderRadius.circular(100.r),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.add_rounded,
+                                    size: 16.w, color: Colors.white),
+                                SizedBox(width: 4.w),
+                                Text(
+                                  'Add Med',
+                                  style: TextStyle(
+                                    fontSize: 12.sp,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                   SizedBox(height: 12.h),

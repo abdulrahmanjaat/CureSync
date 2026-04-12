@@ -9,6 +9,9 @@ class PatientModel {
   final String relation;
   final String accessCode;
   final String? caregiverId;
+  /// All UIDs (manager + any linked caregivers/family) allowed to read
+  /// this patient's sub-collections. Used by Firestore rules.
+  final List<String> accessList;
   final DateTime createdAt;
 
   const PatientModel({
@@ -19,6 +22,7 @@ class PatientModel {
     required this.relation,
     required this.accessCode,
     this.caregiverId,
+    this.accessList = const [],
     required this.createdAt,
   });
 
@@ -32,7 +36,11 @@ class PatientModel {
       relation: data['relation'] ?? '',
       accessCode: data['accessCode'] ?? '',
       caregiverId: data['caregiverId'],
-      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      accessList: (data['accessList'] as List<dynamic>? ?? [])
+          .map((e) => e.toString())
+          .toList(),
+      createdAt:
+          (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
 
@@ -43,7 +51,8 @@ class PatientModel {
       'age': age,
       'relation': relation,
       'accessCode': accessCode,
-      'caregiverId': caregiverId,
+      if (caregiverId != null) 'caregiverId': caregiverId,
+      'accessList': accessList,
       'createdAt': FieldValue.serverTimestamp(),
     };
   }

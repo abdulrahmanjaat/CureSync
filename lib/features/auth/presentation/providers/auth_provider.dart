@@ -96,8 +96,7 @@ class AuthController extends StateNotifier<AsyncValue<void>> {
     final user = _repo.currentUser;
     if (user == null) return;
 
-    final roleStr = role == UserRole.patient ? 'patient' : 'caregiver';
-    await _repo.updateUserRole(user.uid, roleStr);
+    await _repo.updateUserRole(user.uid, role.firestoreValue);
     _ref.read(roleProvider.notifier).selectRole(role);
   }
 

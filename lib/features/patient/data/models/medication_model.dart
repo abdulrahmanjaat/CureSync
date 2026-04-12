@@ -1,5 +1,38 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// Whether the medication should be taken before or after a meal.
+enum MealTiming { beforeMeal, afterMeal, withMeal, noRestriction }
+
+extension MealTimingX on MealTiming {
+  String get firestoreValue => switch (this) {
+        MealTiming.beforeMeal => 'before_meal',
+        MealTiming.afterMeal => 'after_meal',
+        MealTiming.withMeal => 'with_meal',
+        MealTiming.noRestriction => 'no_restriction',
+      };
+
+  String get label => switch (this) {
+        MealTiming.beforeMeal => 'Before Meal',
+        MealTiming.afterMeal => 'After Meal',
+        MealTiming.withMeal => 'With Meal',
+        MealTiming.noRestriction => 'No Restriction',
+      };
+
+  String get emoji => switch (this) {
+        MealTiming.beforeMeal => '🍽️',
+        MealTiming.afterMeal => '✅',
+        MealTiming.withMeal => '🥢',
+        MealTiming.noRestriction => '⏱️',
+      };
+
+  static MealTiming fromString(String? v) => switch (v) {
+        'before_meal' => MealTiming.beforeMeal,
+        'after_meal' => MealTiming.afterMeal,
+        'with_meal' => MealTiming.withMeal,
+        _ => MealTiming.noRestriction,
+      };
+}
+
 class MedicationModel {
   final String? id;
   final String patientId;
@@ -7,6 +40,8 @@ class MedicationModel {
   final String dosage;
   final int durationDays;
   final List<String> reminderTimes; // ["08:00", "14:00", "21:00"]
+  final MealTiming mealTiming;
+  final String? notes;
   final DateTime startDate;
   final bool isActive;
 
@@ -17,6 +52,8 @@ class MedicationModel {
     required this.dosage,
     required this.durationDays,
     required this.reminderTimes,
+    this.mealTiming = MealTiming.noRestriction,
+    this.notes,
     required this.startDate,
     this.isActive = true,
   });
@@ -30,6 +67,8 @@ class MedicationModel {
       dosage: d['dosage'] ?? '',
       durationDays: d['durationDays'] ?? 0,
       reminderTimes: List<String>.from(d['reminderTimes'] ?? []),
+      mealTiming: MealTimingX.fromString(d['mealTiming'] as String?),
+      notes: d['notes'] as String?,
       startDate: (d['startDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
       isActive: d['isActive'] ?? true,
     );
@@ -42,6 +81,8 @@ class MedicationModel {
       'dosage': dosage,
       'durationDays': durationDays,
       'reminderTimes': reminderTimes,
+      'mealTiming': mealTiming.firestoreValue,
+      if (notes != null && notes!.isNotEmpty) 'notes': notes,
       'startDate': FieldValue.serverTimestamp(),
       'isActive': isActive,
     };

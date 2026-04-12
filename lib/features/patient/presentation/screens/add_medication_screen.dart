@@ -4,12 +4,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../../core/utils/snackbar_service.dart';
 import '../../../../shared/widgets/custom_button.dart';
 import '../../../../shared/widgets/custom_text_field.dart';
+import '../../data/models/medication_model.dart';
 import '../providers/medication_provider.dart';
 
 class AddMedicationScreen extends ConsumerStatefulWidget {
@@ -27,64 +29,76 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
   final _nameController = TextEditingController();
   final _dosageController = TextEditingController();
   final _durationController = TextEditingController();
+  final _notesController = TextEditingController();
   final List<TimeOfDay> _reminderTimes = [];
+  MealTiming _mealTiming = MealTiming.noRestriction;
   bool _isLoading = false;
+
+  // ── All 4 options shown as a segmented selector ────────────────────────────
+  static const _mealOptions = MealTiming.values;
 
   Future<void> _pickTime() async {
     TimeOfDay selected = TimeOfDay.now();
 
     await showCupertinoModalPopup(
       context: context,
-      builder: (_) => Container(
-        height: 280.h,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
-        ),
-        child: Column(
-          children: [
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Text('Cancel',
-                        style: TextStyle(
-                            fontSize: 16.sp, color: AppColors.textSecondary)),
-                  ),
-                  Text('Select Time',
-                      style: TextStyle(
-                          fontSize: 16.sp,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary)),
-                  GestureDetector(
-                    onTap: () {
-                      HapticFeedback.lightImpact();
-                      setState(() => _reminderTimes.add(selected));
-                      Navigator.pop(context);
-                    },
-                    child: Text('Done',
-                        style: TextStyle(
-                            fontSize: 16.sp,
+      builder: (_) => Material(
+        color: Colors.transparent,
+        child: Container(
+          height: 280.h,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius:
+                BorderRadius.vertical(top: Radius.circular(24.r)),
+          ),
+          child: Column(
+            children: [
+              // Handle + toolbar
+              Container(
+                padding: EdgeInsets.symmetric(
+                    horizontal: 16.w, vertical: 12.h),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Text('Cancel',
+                          style: GoogleFonts.inter(
+                              fontSize: 16.sp,
+                              color: AppColors.primary)),
+                    ),
+                    Text('Select Time',
+                        style: GoogleFonts.poppins(
+                            fontSize: 15.sp,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.primary)),
-                  ),
-                ],
+                            color: AppColors.textPrimary)),
+                    GestureDetector(
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        setState(() => _reminderTimes.add(selected));
+                        Navigator.pop(context);
+                      },
+                      child: Text('Done',
+                          style: GoogleFonts.inter(
+                              fontSize: 16.sp,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primary)),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            Expanded(
-              child: CupertinoDatePicker(
-                mode: CupertinoDatePickerMode.time,
-                initialDateTime: DateTime.now(),
-                onDateTimeChanged: (dt) {
-                  HapticFeedback.selectionClick();
-                  selected = TimeOfDay.fromDateTime(dt);
-                },
+              Expanded(
+                child: CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.time,
+                  initialDateTime: DateTime.now(),
+                  onDateTimeChanged: (dt) {
+                    HapticFeedback.selectionClick();
+                    selected = TimeOfDay.fromDateTime(dt);
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -111,25 +125,28 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
             dosage: _dosageController.text.trim(),
             durationDays: int.parse(_durationController.text.trim()),
             reminderTimes: times,
+            mealTiming: _mealTiming,
+            notes: _notesController.text.trim().isEmpty
+                ? null
+                : _notesController.text.trim(),
           );
 
-      // Schedule notifications
-      await NotificationService.scheduleMedicationReminders(
+      NotificationService.scheduleMedicationReminders(
         medId: med.id!,
         medName: med.name,
         dosage: med.dosage,
         times: times,
-      );
+      ).catchError((_) {});
 
       if (mounted) {
         SnackbarService.showSuccess(
-            '${med.name} added with ${times.length} reminder(s)');
+            '${med.name} added · ${_mealTiming.label}');
         context.pop();
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        SnackbarService.showError('Failed to add medication');
+        SnackbarService.showError('Failed to add medication: $e');
       }
     }
   }
@@ -139,18 +156,19 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     _nameController.dispose();
     _dosageController.dispose();
     _durationController.dispose();
+    _notesController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFDFC),
+      backgroundColor: const Color(0xFFF8FBFA),
       body: SafeArea(
         child: ListView(
           padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 16.h),
           children: [
-            /// Header
+            // ── Header ──
             Row(
               children: [
                 GestureDetector(
@@ -159,7 +177,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                     height: 40.w,
                     width: 40.w,
                     decoration: BoxDecoration(
-                      color: AppColors.surface,
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(12.r),
                       border: Border.all(color: AppColors.divider),
                     ),
@@ -170,7 +188,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                 SizedBox(width: 14.w),
                 Text(
                   'Add Medication',
-                  style: TextStyle(
+                  style: GoogleFonts.poppins(
                     fontSize: 22.sp,
                     fontWeight: FontWeight.w800,
                     color: AppColors.textPrimary,
@@ -180,12 +198,12 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
             ),
             SizedBox(height: 28.h),
 
-            /// Form
             Form(
               key: _formKey,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // ── Name ──
                   CustomTextField(
                     controller: _nameController,
                     label: 'Medicine Name',
@@ -195,6 +213,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                   ),
                   SizedBox(height: 16.h),
 
+                  // ── Dosage + Duration ──
                   Row(
                     children: [
                       Expanded(
@@ -223,18 +242,27 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                   ),
                   SizedBox(height: 24.h),
 
-                  /// Reminder times
+                  // ── Meal Timing ──────────────────────────────────────────
+                  _SectionLabel(label: 'Meal Timing'),
+                  SizedBox(height: 10.h),
+                  _MealTimingSelector(
+                    selected: _mealTiming,
+                    onChanged: (v) {
+                      HapticFeedback.selectionClick();
+                      setState(() => _mealTiming = v);
+                    },
+                    options: _mealOptions,
+                  ),
+                  SizedBox(height: 8.h),
+                  // Context hint
+                  _MealTimingHint(timing: _mealTiming),
+                  SizedBox(height: 24.h),
+
+                  // ── Reminder Times ────────────────────────────────────────
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        'Reminder Times',
-                        style: TextStyle(
-                          fontSize: 14.sp,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
+                      _SectionLabel(label: 'Reminder Times'),
                       GestureDetector(
                         onTap: _pickTime,
                         child: Container(
@@ -253,7 +281,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                               SizedBox(width: 4.w),
                               Text(
                                 'Add Time',
-                                style: TextStyle(
+                                style: GoogleFonts.inter(
                                   fontSize: 12.sp,
                                   fontWeight: FontWeight.w700,
                                   color: AppColors.primaryDark,
@@ -272,10 +300,11 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                       width: double.infinity,
                       padding: EdgeInsets.symmetric(vertical: 20.h),
                       decoration: BoxDecoration(
-                        color: AppColors.scaffold,
+                        color: const Color(0xFFF1F5F9),
                         borderRadius: BorderRadius.circular(14.r),
                         border: Border.all(
-                            color: AppColors.divider.withValues(alpha: 0.5)),
+                            color: AppColors.divider
+                                .withValues(alpha: 0.5)),
                       ),
                       child: Column(
                         children: [
@@ -284,7 +313,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                           SizedBox(height: 6.h),
                           Text(
                             'No reminders yet',
-                            style: TextStyle(
+                            style: GoogleFonts.inter(
                                 fontSize: 13.sp,
                                 color: AppColors.textHint),
                           ),
@@ -295,7 +324,8 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                     Wrap(
                       spacing: 8.w,
                       runSpacing: 8.h,
-                      children: _reminderTimes.asMap().entries.map((e) {
+                      children:
+                          _reminderTimes.asMap().entries.map((e) {
                         final i = e.key;
                         final t = e.value;
                         return Container(
@@ -304,7 +334,8 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                           decoration: BoxDecoration(
                             color: AppColors.warning
                                 .withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(12.r),
+                            borderRadius:
+                                BorderRadius.circular(12.r),
                             border: Border.all(
                                 color: AppColors.warning
                                     .withValues(alpha: 0.2)),
@@ -313,11 +344,12 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(Icons.alarm_rounded,
-                                  size: 16.w, color: AppColors.warning),
+                                  size: 16.w,
+                                  color: AppColors.warning),
                               SizedBox(width: 6.w),
                               Text(
                                 _formatTime(t),
-                                style: TextStyle(
+                                style: GoogleFonts.poppins(
                                   fontSize: 15.sp,
                                   fontWeight: FontWeight.w700,
                                   color: AppColors.textPrimary,
@@ -325,8 +357,8 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                               ),
                               SizedBox(width: 8.w),
                               GestureDetector(
-                                onTap: () => setState(
-                                    () => _reminderTimes.removeAt(i)),
+                                onTap: () => setState(() =>
+                                    _reminderTimes.removeAt(i)),
                                 child: Icon(Icons.close_rounded,
                                     size: 16.w,
                                     color: AppColors.textHint),
@@ -336,6 +368,38 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                         );
                       }).toList(),
                     ),
+                  SizedBox(height: 24.h),
+
+                  // ── Notes (optional) ──────────────────────────────────────
+                  _SectionLabel(label: 'Notes (optional)'),
+                  SizedBox(height: 10.h),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14.r),
+                      border: Border.all(color: AppColors.divider),
+                    ),
+                    child: TextField(
+                      controller: _notesController,
+                      maxLines: 2,
+                      maxLength: 200,
+                      style: GoogleFonts.inter(
+                          fontSize: 14.sp,
+                          color: AppColors.textPrimary),
+                      decoration: InputDecoration(
+                        hintText:
+                            'e.g. Take with a full glass of water…',
+                        hintStyle: GoogleFonts.inter(
+                            fontSize: 13.sp,
+                            color: AppColors.textHint),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.all(14.w),
+                        counterStyle: GoogleFonts.inter(
+                            fontSize: 11.sp,
+                            color: const Color(0xFFCBD5E1)),
+                      ),
+                    ),
+                  ),
                   SizedBox(height: 36.h),
 
                   CustomButton(
@@ -348,6 +412,161 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ─── Meal Timing Selector ─────────────────────────────────────────────────────
+
+class _MealTimingSelector extends StatelessWidget {
+  final MealTiming selected;
+  final ValueChanged<MealTiming> onChanged;
+  final List<MealTiming> options;
+
+  const _MealTimingSelector({
+    required this.selected,
+    required this.onChanged,
+    required this.options,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8.w,
+      runSpacing: 8.h,
+      children: options.map((opt) {
+        final isSelected = selected == opt;
+        final color = switch (opt) {
+          MealTiming.beforeMeal => const Color(0xFF0891B2),
+          MealTiming.afterMeal => const Color(0xFF16A34A),
+          MealTiming.withMeal => const Color(0xFFEA580C),
+          MealTiming.noRestriction => const Color(0xFF64748B),
+        };
+
+        return GestureDetector(
+          onTap: () => onChanged(opt),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            padding: EdgeInsets.symmetric(
+                horizontal: 12.w, vertical: 10.h),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? color.withValues(alpha: 0.1)
+                  : Colors.white,
+              borderRadius: BorderRadius.circular(12.r),
+              border: Border.all(
+                color: isSelected
+                    ? color
+                    : const Color(0xFFE2E8F0),
+                width: isSelected ? 1.5 : 1,
+              ),
+              boxShadow: isSelected
+                  ? [
+                      BoxShadow(
+                        color: color.withValues(alpha: 0.12),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      )
+                    ]
+                  : [],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(opt.emoji,
+                    style: TextStyle(fontSize: 14.sp)),
+                SizedBox(width: 6.w),
+                Text(
+                  opt.label,
+                  style: GoogleFonts.inter(
+                    fontSize: 12.sp,
+                    fontWeight: isSelected
+                        ? FontWeight.w700
+                        : FontWeight.w500,
+                    color: isSelected
+                        ? color
+                        : const Color(0xFF64748B),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+// ─── Clinical context hint ────────────────────────────────────────────────────
+
+class _MealTimingHint extends StatelessWidget {
+  final MealTiming timing;
+  const _MealTimingHint({required this.timing});
+
+  @override
+  Widget build(BuildContext context) {
+    final (hint, color) = switch (timing) {
+      MealTiming.beforeMeal => (
+          'Take 30–60 min before eating to maximise absorption.',
+          const Color(0xFF0891B2),
+        ),
+      MealTiming.afterMeal => (
+          'Take immediately after meals to reduce stomach irritation.',
+          const Color(0xFF16A34A),
+        ),
+      MealTiming.withMeal => (
+          'Take during your meal — food aids dissolution or absorption.',
+          const Color(0xFFEA580C),
+        ),
+      MealTiming.noRestriction => (
+          'No meal restriction for this medication.',
+          const Color(0xFF64748B),
+        ),
+    };
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10.r),
+        border: Border.all(color: color.withValues(alpha: 0.15)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline_rounded,
+              size: 14.w, color: color),
+          SizedBox(width: 8.w),
+          Expanded(
+            child: Text(
+              hint,
+              style: GoogleFonts.inter(
+                fontSize: 11.sp,
+                color: color,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Section label ────────────────────────────────────────────────────────────
+
+class _SectionLabel extends StatelessWidget {
+  final String label;
+  const _SectionLabel({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: GoogleFonts.poppins(
+        fontSize: 13.sp,
+        fontWeight: FontWeight.w600,
+        color: const Color(0xFF0F172A),
       ),
     );
   }

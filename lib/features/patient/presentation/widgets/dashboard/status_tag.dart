@@ -13,7 +13,7 @@ class StatusTag extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
+      padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
       decoration: BoxDecoration(
         color: _bgColor,
         borderRadius: BorderRadius.circular(100.r),
@@ -21,10 +21,12 @@ class StatusTag extends StatelessWidget {
       child: Text(
         customLabel ?? _label,
         style: GoogleFonts.inter(
-          fontSize: 10.sp,
+          fontSize: 9.sp,
           fontWeight: FontWeight.w700,
           color: _textColor,
         ),
+        overflow: TextOverflow.ellipsis,
+        maxLines: 1,
       ),
     );
   }

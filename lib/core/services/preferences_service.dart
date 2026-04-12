@@ -36,6 +36,14 @@ class PreferencesService {
     await _prefs?.setBool('is_dark_mode', value);
   }
 
+  // ─── Avatar ───────────────────────────────────────────────────
+  static int get avatarIndex => _prefs?.getInt('avatar_index') ?? 0;
+
+  static Future<void> setAvatarIndex(int index) async {
+    await _ensureInit();
+    await _prefs?.setInt('avatar_index', index);
+  }
+
   // ─── Clear ────────────────────────────────────────────────────
   static Future<void> clearAll() async {
     await _prefs?.clear();

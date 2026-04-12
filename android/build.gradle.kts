@@ -19,6 +19,14 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// Fix: Gradle incremental Java compilation fails when source files span
+// different Windows drive letters (project on D:, Pub cache on C:).
+subprojects {
+    tasks.withType<JavaCompile> {
+        options.isIncremental = false
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }

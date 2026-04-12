@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/presentation/providers/auth_provider.dart';
+import '../../features/auth/presentation/providers/role_provider.dart';
 import '../../features/auth/presentation/screens/splash_screen.dart';
 import '../../features/auth/presentation/screens/onboarding_screen.dart';
 import '../../features/auth/presentation/screens/login_option_screen.dart';
@@ -13,6 +14,12 @@ import '../../features/auth/presentation/screens/role_selection_screen.dart';
 import '../../features/patient/presentation/screens/patient_details_screen.dart';
 import '../../features/patient/presentation/screens/add_medication_screen.dart';
 import '../../features/patient/presentation/screens/patient_management_screen.dart';
+import '../../features/patient/presentation/screens/profile_screen.dart';
+import '../../features/notifications/presentation/screens/notification_history_screen.dart';
+import '../../features/caregiver/presentation/screens/caregiver_onboarding_screen.dart';
+import '../../features/caregiver/presentation/screens/caregiver_alerts_screen.dart';
+import '../../features/caregiver/presentation/screens/pending_deals_screen.dart';
+import '../../features/manager/presentation/screens/manager_patient_view_screen.dart';
 import '../../shared/navigation/main_wrapper.dart';
 import '../services/preferences_service.dart';
 
@@ -50,11 +57,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       final authState = ref.read(authStateProvider);
       final userData = ref.read(currentUserDataProvider);
       final isLoggedIn = authState.valueOrNull != null;
-      final role = userData.valueOrNull?.role;
+      final roleStr = userData.valueOrNull?.role;
+      final role = UserRoleX.fromString(roleStr);
       final currentPath = state.uri.path;
 
       debugPrint('DEBUG ROUTER: path=$currentPath, '
-          'loggedIn=$isLoggedIn, role=$role');
+          'loggedIn=$isLoggedIn, role=$roleStr');
 
       // ── Splash: always allow ──
       if (currentPath == '/') return null;
@@ -75,21 +83,31 @@ final routerProvider = Provider<GoRouter>((ref) {
         return hasSeenOnboarding ? '/login-option' : '/onboarding';
       }
 
-      // CASE 2: Logged in but NO role
+      // CASE 2: Logged in but NO role assigned yet
       if (role == null) {
         if (currentPath == '/role-selection') return null;
+        // Pro-caregiver onboarding is accessible before role is confirmed
+        if (currentPath == '/caregiver/onboarding') return null;
         return '/role-selection';
       }
 
-      // CASE 3: Logged in WITH role
+      // CASE 3: Logged in WITH role — bounce off public / role-selection
       if (isOnPublicPage || currentPath == '/role-selection') {
+        return '/dashboard';
+      }
+
+      // CASE 4: Role-specific guard — block wrong dashboards
+      // Only Patient and Manager may access the discovery hub
+      if (currentPath == '/discovery' &&
+          role != UserRole.patient &&
+          role != UserRole.manager) {
         return '/dashboard';
       }
 
       return null;
     },
     routes: [
-      // ── Auth routes ──
+      // ── Auth routes ──────────────────────────────────────────────────────
       GoRoute(
         path: '/',
         builder: (context, state) => const SplashScreen(),
@@ -115,32 +133,67 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const RoleSelectionScreen(),
       ),
 
-      // ── Main app (bottom nav) ──
+      // ── Main app shell (role-aware bottom nav) ───────────────────────────
       GoRoute(
         path: '/dashboard',
         builder: (context, state) => const MainWrapper(),
       ),
 
-      // ── Patient detail ──
+      // ── Patient routes ───────────────────────────────────────────────────
       GoRoute(
         path: '/patient/:id',
         builder: (context, state) => PatientDetailsScreen(
           patientId: state.pathParameters['id']!,
         ),
       ),
-
-      // ── Add medication ──
       GoRoute(
         path: '/patient/:id/add-med',
         builder: (context, state) => AddMedicationScreen(
           patientId: state.pathParameters['id']!,
         ),
       ),
-
-      // ── Patient management hub ──
       GoRoute(
         path: '/manage-patients',
         builder: (context, state) => const PatientManagementScreen(),
+      ),
+
+      // ── Push routes (all roles) ──────────────────────────────────────────
+      GoRoute(
+        path: '/notifications',
+        builder: (context, state) => const NotificationHistoryScreen(),
+      ),
+      GoRoute(
+        path: '/profile',
+        builder: (context, state) => const ProfileScreen(),
+      ),
+
+      // ── Manager routes ───────────────────────────────────────────────────
+      GoRoute(
+        path: '/manager/patient/:id',
+        builder: (context, state) => ManagerPatientViewScreen(
+          patientId: state.pathParameters['id']!,
+        ),
+      ),
+
+      // ── Caregiver / Family shared routes ────────────────────────────────
+      GoRoute(
+        path: '/caregiver/onboarding',
+        builder: (context, state) => const CaregiverOnboardingScreen(),
+      ),
+      GoRoute(
+        path: '/caregiver/alerts',
+        builder: (context, state) => const CaregiverAlertsScreen(),
+      ),
+      GoRoute(
+        path: '/caregiver/deals',
+        builder: (context, state) => const PendingDealsScreen(),
+      ),
+      GoRoute(
+        path: '/caregiver/patient/:id',
+        builder: (context, state) => PatientDetailsScreen(
+          patientId: state.pathParameters['id']!,
+          readOnly: true,
+        ),
       ),
     ],
   );
