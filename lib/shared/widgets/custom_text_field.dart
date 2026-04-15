@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../core/constants/app_colors.dart';
@@ -24,6 +25,7 @@ class CustomTextField extends StatefulWidget {
   final bool isOptional;
   final int maxLines;
   final Iterable<String>? autofillHints;
+  final List<TextInputFormatter>? inputFormatters;
 
   const CustomTextField({
     super.key,
@@ -45,6 +47,7 @@ class CustomTextField extends StatefulWidget {
     this.isOptional = false,
     this.maxLines = 1,
     this.autofillHints,
+    this.inputFormatters,
   });
 
   @override
@@ -135,6 +138,7 @@ class _CustomTextFieldState extends State<CustomTextField> {
           onChanged: widget.onChanged,
           maxLines: widget.maxLines,
           autofillHints: widget.autofillHints,
+          inputFormatters: widget.inputFormatters,
           decoration: InputDecoration(
             hintText: widget.hint,
             prefixIcon: widget.prefixIcon,

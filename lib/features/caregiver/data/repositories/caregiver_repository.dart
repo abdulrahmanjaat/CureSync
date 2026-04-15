@@ -167,7 +167,7 @@ class CaregiverRepository {
             .map((d) {
               final data = d.data();
               final medId = data['medId'] as String? ?? '';
-              final time = data['scheduledTime'] as String? ?? '';
+              final time = data['reminderTime'] as String? ?? '';
               return '${medId}_$time';
             })
             .toList());

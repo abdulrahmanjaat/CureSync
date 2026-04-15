@@ -142,13 +142,17 @@ class AppDatabase extends _$AppDatabase {
 
   // ── Profile Images ────────────────────────────────────────────────────────────
 
-  /// Streams the avatar index for a specific user+role combination.
+  /// Streams the full ProfileImage record for a given user+role.
+  /// Callers use [ProfileImage.localImagePath] and [ProfileImage.avatarIndex]
+  /// to decide what to render.
   Stream<ProfileImage?> watchProfileImage(String uid, String role) {
     return (select(profileImages)
           ..where((t) => t.uid.equals(uid) & t.role.equals(role)))
         .watchSingleOrNull();
   }
 
+  /// Saves an icon-avatar selection. Clears [localImagePath] so the icon
+  /// is shown instead of a previously picked photo.
   Future<void> upsertProfileImage(
       String uid, String role, int avatarIndex) async {
     await into(profileImages).insertOnConflictUpdate(
@@ -156,6 +160,25 @@ class AppDatabase extends _$AppDatabase {
         uid: Value(uid),
         role: Value(role),
         avatarIndex: Value(avatarIndex),
+        localImagePath: const Value(null), // revert to icon mode
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  /// Saves a locally picked photo path. Preserves the existing [avatarIndex]
+  /// so the user can revert to it later by picking an icon avatar.
+  Future<void> upsertProfileImagePath(
+      String uid, String role, String? imagePath) async {
+    final current = await (select(profileImages)
+          ..where((t) => t.uid.equals(uid) & t.role.equals(role)))
+        .getSingleOrNull();
+    await into(profileImages).insertOnConflictUpdate(
+      ProfileImagesCompanion(
+        uid: Value(uid),
+        role: Value(role),
+        avatarIndex: Value(current?.avatarIndex ?? 0),
+        localImagePath: Value(imagePath),
         updatedAt: Value(DateTime.now()),
       ),
     );

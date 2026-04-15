@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,6 +14,7 @@ import '../../../auth/data/models/user_model.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../providers/medication_provider.dart';
 import '../providers/patient_provider.dart';
+import '../providers/profile_provider.dart';
 import '../widgets/dashboard/bento_card.dart';
 import '../widgets/dashboard/adherence_ring_widget.dart';
 import '../widgets/dashboard/smart_action_card.dart';
@@ -47,10 +50,24 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authUser = ref.watch(authStateProvider).valueOrNull;
     final firstName = (authUser?.displayName ?? 'User').split(' ').first;
-    final photoUrl = authUser?.photoURL;
 
-    // Resolve active patient (explicit selection OR first in list)
-    final activeId = ref.watch(resolvedActivePatientIdProvider);
+    // Local Drift image takes priority over Firebase Auth photoURL
+    final imageRecord = ref.watch(profileImageRecordProvider).valueOrNull;
+    final localPath   = imageRecord?.localImagePath;
+    final hasLocal    = localPath != null && File(localPath).existsSync();
+    final photoUrl    = authUser?.photoURL;
+
+    // ── Patient-role: ensure self-document exists then use uid directly ──────
+    // selfPatientInitProvider is idempotent — it creates patients/{uid} once
+    // and is a no-op on every subsequent call.
+    if (!trackingOnly) ref.watch(selfPatientInitProvider);
+
+    // Patient dashboard  → locked to the logged-in user's own UID.
+    // Manager tracking   → resolves the explicitly-selected patient.
+    final selfId   = ref.watch(selfPatientIdProvider);
+    final activeId = trackingOnly
+        ? ref.watch(resolvedActivePatientIdProvider)
+        : selfId;
 
     // Active patient object — used for the trackingOnly header and caregiver footer
     final allPatients = ref.watch(patientsStreamProvider).valueOrNull ?? [];
@@ -176,14 +193,19 @@ class HomeScreen extends ConsumerWidget {
                                 ),
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(14.r),
-                                  child: photoUrl != null
-                                      ? Image.network(
-                                          photoUrl,
+                                  child: hasLocal
+                                      ? Image.file(
+                                          File(localPath),
                                           fit: BoxFit.cover,
-                                          errorBuilder: (_, _, _) =>
-                                              _buildAvatarFallback(firstName),
                                         )
-                                      : _buildAvatarFallback(firstName),
+                                      : photoUrl != null
+                                          ? Image.network(
+                                              photoUrl,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, _, _) =>
+                                                  _buildAvatarFallback(firstName),
+                                            )
+                                          : _buildAvatarFallback(firstName),
                                 ),
                               ),
                             ),
@@ -283,26 +305,11 @@ class HomeScreen extends ConsumerWidget {
                             BentoCard(
                               onTap: () {
                                 HapticFeedback.lightImpact();
+                                // activeId is always the user's own UID in
+                                // patient mode (selfPatientInitProvider ensures
+                                // the doc exists before the dashboard renders).
                                 if (activeId != null) {
-                                  context
-                                      .push('/patient/$activeId/add-med');
-                                } else {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Add a patient profile first',
-                                        style: GoogleFonts.inter(
-                                            color: Colors.white),
-                                      ),
-                                      backgroundColor:
-                                          const Color(0xFF0D9488),
-                                      behavior: SnackBarBehavior.floating,
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12.r)),
-                                    ),
-                                  );
-                                  context.push('/manage-patients');
+                                  context.push('/patient/$activeId/add-med');
                                 }
                               },
                               padding: EdgeInsets.all(14.w),
@@ -391,7 +398,7 @@ class HomeScreen extends ConsumerWidget {
                   // ═══════════════════════════════════════════════════════════
                   // LIFESTYLE STRIP — shown in both modes
                   // ═══════════════════════════════════════════════════════════
-                  const LifestyleStrip()
+                  LifestyleStrip(patientId: activeId)
                       .animate()
                       .fadeIn(duration: 400.ms, delay: 360.ms),
 
@@ -400,7 +407,7 @@ class HomeScreen extends ConsumerWidget {
                   // ═══════════════════════════════════════════════════════════
                   // VITALS BENTO — shown in both modes
                   // ═══════════════════════════════════════════════════════════
-                  VitalsBento()
+                  VitalsBento(patientId: activeId)
                       .animate()
                       .fadeIn(duration: 400.ms, delay: 420.ms)
                       .scale(

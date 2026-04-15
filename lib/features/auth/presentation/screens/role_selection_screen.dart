@@ -44,7 +44,7 @@ const _nodes = [
     icon: Icons.badge_rounded,
     description:
         'Professional healthcare worker — set rates, manage multiple patients and get discovered.',
-    role: UserRole.proCaegiver,
+    role: UserRole.proCaregiver,
     color: Color(0xFF0891B2),
   ),
   _Node(

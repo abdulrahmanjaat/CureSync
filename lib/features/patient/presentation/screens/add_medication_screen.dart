@@ -114,6 +114,12 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
       return;
     }
 
+    final durationDays = int.tryParse(_durationController.text.trim());
+    if (durationDays == null || durationDays <= 0) {
+      SnackbarService.showError('Duration must be a whole number of days');
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -123,7 +129,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
             patientId: widget.patientId,
             name: _nameController.text.trim(),
             dosage: _dosageController.text.trim(),
-            durationDays: int.parse(_durationController.text.trim()),
+            durationDays: durationDays,
             reminderTimes: times,
             mealTiming: _mealTiming,
             notes: _notesController.text.trim().isEmpty
@@ -233,6 +239,9 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                           label: 'Duration (days)',
                           hint: 'e.g. 30',
                           keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
                           textInputAction: TextInputAction.done,
                           autovalidateMode:
                               AutovalidateMode.onUserInteraction,

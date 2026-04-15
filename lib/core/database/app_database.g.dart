@@ -1535,6 +1535,17 @@ class $ProfileImagesTable extends ProfileImages
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _localImagePathMeta = const VerificationMeta(
+    'localImagePath',
+  );
+  @override
+  late final GeneratedColumn<String> localImagePath = GeneratedColumn<String>(
+    'local_image_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _updatedAtMeta = const VerificationMeta(
     'updatedAt',
   );
@@ -1547,7 +1558,13 @@ class $ProfileImagesTable extends ProfileImages
     requiredDuringInsert: true,
   );
   @override
-  List<GeneratedColumn> get $columns => [uid, role, avatarIndex, updatedAt];
+  List<GeneratedColumn> get $columns => [
+    uid,
+    role,
+    avatarIndex,
+    localImagePath,
+    updatedAt,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -1585,6 +1602,15 @@ class $ProfileImagesTable extends ProfileImages
         ),
       );
     }
+    if (data.containsKey('local_image_path')) {
+      context.handle(
+        _localImagePathMeta,
+        localImagePath.isAcceptableOrUnknown(
+          data['local_image_path']!,
+          _localImagePathMeta,
+        ),
+      );
+    }
     if (data.containsKey('updated_at')) {
       context.handle(
         _updatedAtMeta,
@@ -1614,6 +1640,10 @@ class $ProfileImagesTable extends ProfileImages
         DriftSqlType.int,
         data['${effectivePrefix}avatar_index'],
       )!,
+      localImagePath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}local_image_path'],
+      ),
       updatedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}updated_at'],
@@ -1631,11 +1661,13 @@ class ProfileImage extends DataClass implements Insertable<ProfileImage> {
   final String uid;
   final String role;
   final int avatarIndex;
+  final String? localImagePath;
   final DateTime updatedAt;
   const ProfileImage({
     required this.uid,
     required this.role,
     required this.avatarIndex,
+    this.localImagePath,
     required this.updatedAt,
   });
   @override
@@ -1644,6 +1676,9 @@ class ProfileImage extends DataClass implements Insertable<ProfileImage> {
     map['uid'] = Variable<String>(uid);
     map['role'] = Variable<String>(role);
     map['avatar_index'] = Variable<int>(avatarIndex);
+    if (!nullToAbsent || localImagePath != null) {
+      map['local_image_path'] = Variable<String>(localImagePath);
+    }
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
   }
@@ -1653,6 +1688,9 @@ class ProfileImage extends DataClass implements Insertable<ProfileImage> {
       uid: Value(uid),
       role: Value(role),
       avatarIndex: Value(avatarIndex),
+      localImagePath: localImagePath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(localImagePath),
       updatedAt: Value(updatedAt),
     );
   }
@@ -1666,6 +1704,7 @@ class ProfileImage extends DataClass implements Insertable<ProfileImage> {
       uid: serializer.fromJson<String>(json['uid']),
       role: serializer.fromJson<String>(json['role']),
       avatarIndex: serializer.fromJson<int>(json['avatarIndex']),
+      localImagePath: serializer.fromJson<String?>(json['localImagePath']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
   }
@@ -1676,6 +1715,7 @@ class ProfileImage extends DataClass implements Insertable<ProfileImage> {
       'uid': serializer.toJson<String>(uid),
       'role': serializer.toJson<String>(role),
       'avatarIndex': serializer.toJson<int>(avatarIndex),
+      'localImagePath': serializer.toJson<String?>(localImagePath),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
   }
@@ -1684,11 +1724,15 @@ class ProfileImage extends DataClass implements Insertable<ProfileImage> {
     String? uid,
     String? role,
     int? avatarIndex,
+    Value<String?> localImagePath = const Value.absent(),
     DateTime? updatedAt,
   }) => ProfileImage(
     uid: uid ?? this.uid,
     role: role ?? this.role,
     avatarIndex: avatarIndex ?? this.avatarIndex,
+    localImagePath: localImagePath.present
+        ? localImagePath.value
+        : this.localImagePath,
     updatedAt: updatedAt ?? this.updatedAt,
   );
   ProfileImage copyWithCompanion(ProfileImagesCompanion data) {
@@ -1698,6 +1742,9 @@ class ProfileImage extends DataClass implements Insertable<ProfileImage> {
       avatarIndex: data.avatarIndex.present
           ? data.avatarIndex.value
           : this.avatarIndex,
+      localImagePath: data.localImagePath.present
+          ? data.localImagePath.value
+          : this.localImagePath,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
   }
@@ -1708,13 +1755,15 @@ class ProfileImage extends DataClass implements Insertable<ProfileImage> {
           ..write('uid: $uid, ')
           ..write('role: $role, ')
           ..write('avatarIndex: $avatarIndex, ')
+          ..write('localImagePath: $localImagePath, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(uid, role, avatarIndex, updatedAt);
+  int get hashCode =>
+      Object.hash(uid, role, avatarIndex, localImagePath, updatedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1722,6 +1771,7 @@ class ProfileImage extends DataClass implements Insertable<ProfileImage> {
           other.uid == this.uid &&
           other.role == this.role &&
           other.avatarIndex == this.avatarIndex &&
+          other.localImagePath == this.localImagePath &&
           other.updatedAt == this.updatedAt);
 }
 
@@ -1729,12 +1779,14 @@ class ProfileImagesCompanion extends UpdateCompanion<ProfileImage> {
   final Value<String> uid;
   final Value<String> role;
   final Value<int> avatarIndex;
+  final Value<String?> localImagePath;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
   const ProfileImagesCompanion({
     this.uid = const Value.absent(),
     this.role = const Value.absent(),
     this.avatarIndex = const Value.absent(),
+    this.localImagePath = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -1742,6 +1794,7 @@ class ProfileImagesCompanion extends UpdateCompanion<ProfileImage> {
     required String uid,
     required String role,
     this.avatarIndex = const Value.absent(),
+    this.localImagePath = const Value.absent(),
     required DateTime updatedAt,
     this.rowid = const Value.absent(),
   }) : uid = Value(uid),
@@ -1751,6 +1804,7 @@ class ProfileImagesCompanion extends UpdateCompanion<ProfileImage> {
     Expression<String>? uid,
     Expression<String>? role,
     Expression<int>? avatarIndex,
+    Expression<String>? localImagePath,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
   }) {
@@ -1758,6 +1812,7 @@ class ProfileImagesCompanion extends UpdateCompanion<ProfileImage> {
       if (uid != null) 'uid': uid,
       if (role != null) 'role': role,
       if (avatarIndex != null) 'avatar_index': avatarIndex,
+      if (localImagePath != null) 'local_image_path': localImagePath,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
     });
@@ -1767,6 +1822,7 @@ class ProfileImagesCompanion extends UpdateCompanion<ProfileImage> {
     Value<String>? uid,
     Value<String>? role,
     Value<int>? avatarIndex,
+    Value<String?>? localImagePath,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
   }) {
@@ -1774,6 +1830,7 @@ class ProfileImagesCompanion extends UpdateCompanion<ProfileImage> {
       uid: uid ?? this.uid,
       role: role ?? this.role,
       avatarIndex: avatarIndex ?? this.avatarIndex,
+      localImagePath: localImagePath ?? this.localImagePath,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
     );
@@ -1791,6 +1848,9 @@ class ProfileImagesCompanion extends UpdateCompanion<ProfileImage> {
     if (avatarIndex.present) {
       map['avatar_index'] = Variable<int>(avatarIndex.value);
     }
+    if (localImagePath.present) {
+      map['local_image_path'] = Variable<String>(localImagePath.value);
+    }
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(updatedAt.value);
     }
@@ -1806,6 +1866,7 @@ class ProfileImagesCompanion extends UpdateCompanion<ProfileImage> {
           ..write('uid: $uid, ')
           ..write('role: $role, ')
           ..write('avatarIndex: $avatarIndex, ')
+          ..write('localImagePath: $localImagePath, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -2600,6 +2661,7 @@ typedef $$ProfileImagesTableCreateCompanionBuilder =
       required String uid,
       required String role,
       Value<int> avatarIndex,
+      Value<String?> localImagePath,
       required DateTime updatedAt,
       Value<int> rowid,
     });
@@ -2608,6 +2670,7 @@ typedef $$ProfileImagesTableUpdateCompanionBuilder =
       Value<String> uid,
       Value<String> role,
       Value<int> avatarIndex,
+      Value<String?> localImagePath,
       Value<DateTime> updatedAt,
       Value<int> rowid,
     });
@@ -2633,6 +2696,11 @@ class $$ProfileImagesTableFilterComposer
 
   ColumnFilters<int> get avatarIndex => $composableBuilder(
     column: $table.avatarIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get localImagePath => $composableBuilder(
+    column: $table.localImagePath,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2666,6 +2734,11 @@ class $$ProfileImagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get localImagePath => $composableBuilder(
+    column: $table.localImagePath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
@@ -2689,6 +2762,11 @@ class $$ProfileImagesTableAnnotationComposer
 
   GeneratedColumn<int> get avatarIndex => $composableBuilder(
     column: $table.avatarIndex,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get localImagePath => $composableBuilder(
+    column: $table.localImagePath,
     builder: (column) => column,
   );
 
@@ -2730,12 +2808,14 @@ class $$ProfileImagesTableTableManager
                 Value<String> uid = const Value.absent(),
                 Value<String> role = const Value.absent(),
                 Value<int> avatarIndex = const Value.absent(),
+                Value<String?> localImagePath = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ProfileImagesCompanion(
                 uid: uid,
                 role: role,
                 avatarIndex: avatarIndex,
+                localImagePath: localImagePath,
                 updatedAt: updatedAt,
                 rowid: rowid,
               ),
@@ -2744,12 +2824,14 @@ class $$ProfileImagesTableTableManager
                 required String uid,
                 required String role,
                 Value<int> avatarIndex = const Value.absent(),
+                Value<String?> localImagePath = const Value.absent(),
                 required DateTime updatedAt,
                 Value<int> rowid = const Value.absent(),
               }) => ProfileImagesCompanion.insert(
                 uid: uid,
                 role: role,
                 avatarIndex: avatarIndex,
+                localImagePath: localImagePath,
                 updatedAt: updatedAt,
                 rowid: rowid,
               ),

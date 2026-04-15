@@ -1,0 +1,164 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helper Functions ────────────────────────────────────────────────────────
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    /// Returns true if the current user is in the patient's accessList
+    /// (covers both pro-caregivers and family members linked via code).
+    function isInAccessList(patientId) {
+      let patient = get(/databases/$(database)/documents/patients/$(patientId));
+      return request.auth != null &&
+        request.auth.uid in patient.data.accessList;
+    }
+
+    function canAccessPatient(patientId) {
+      let patient = get(/databases/$(database)/documents/patients/$(patientId));
+      return request.auth != null && (
+        patient.data.managerId == request.auth.uid ||
+        isInAccessList(patientId)
+      );
+    }
+
+    // ─── Users ───────────────────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      // Notification history sub-collection
+      match /notifications/{notifId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // ─── Patients (Care Circle / Family Profiles) ────────────────────────────────
+    match /patients/{patientId} {
+      allow create: if isAuthenticated();
+
+      // Manager or anyone in accessList may read the patient document.
+      // limit == 1 allows the access-code lookup query (no document reference available).
+      allow read: if isAuthenticated() && (
+        resource.data.managerId == request.auth.uid ||
+        request.auth.uid in resource.data.accessList ||
+        request.query.limit == 1
+      );
+
+      // Manager or anyone already in accessList may update freely.
+      // Additionally, any authenticated user may perform the ONE-TIME linking
+      // handshake that adds themselves to accessList (and sets caregiverId).
+      // The handshake write is tightly constrained:
+      //   • Only 'caregiverId' and 'accessList' fields may change.
+      //   • All existing accessList entries must be preserved (no removals).
+      //   • The new list may grow by at most one entry.
+      //   • The caller's own UID must be present in the updated list.
+      // This prevents using the handshake path to modify any other field,
+      // remove existing members, or inject a foreign UID.
+      allow update: if isAuthenticated() && (
+        resource.data.managerId == request.auth.uid ||
+        request.auth.uid in resource.data.accessList ||
+        (
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['caregiverId', 'accessList']) &&
+          request.resource.data.accessList.hasAll(resource.data.accessList) &&
+          request.resource.data.accessList.size() <=
+            resource.data.accessList.size() + 1 &&
+          request.auth.uid in request.resource.data.accessList
+        )
+      );
+
+      allow delete: if isAuthenticated() &&
+        resource.data.managerId == request.auth.uid;
+
+      // ── Medications sub-collection ────────────────────────────────────────────
+      // Only manager or accessList members may read medications.
+      // Only manager may write (add/edit/delete) medications.
+      match /medications/{medId} {
+        allow read: if canAccessPatient(patientId);
+        allow write: if isAuthenticated() &&
+          get(/databases/$(database)/documents/patients/$(patientId)).data.managerId == request.auth.uid;
+      }
+
+      // ── Dose Logs sub-collection ──────────────────────────────────────────────
+      // Only manager may mark doses taken; accessList members may read.
+      match /dose_logs/{logId} {
+        allow read: if canAccessPatient(patientId);
+        allow write: if isAuthenticated() &&
+          get(/databases/$(database)/documents/patients/$(patientId)).data.managerId == request.auth.uid;
+      }
+
+      // ── Any future nested sub-collections (recursive) ─────────────────────────
+      match /{subcollection=**}/{document} {
+        allow read: if canAccessPatient(patientId);
+        allow write: if isAuthenticated() &&
+          get(/databases/$(database)/documents/patients/$(patientId)).data.managerId == request.auth.uid;
+      }
+    }
+
+    // ─── Discovery Hub: Pro Caregivers ───────────────────────────────────────────
+    // Only Pro Caregivers (synced on onboarding completion) appear here.
+    // Family members are NEVER written here.
+    match /pro_caregivers/{caregiverId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isOwner(caregiverId);
+      allow delete: if isOwner(caregiverId);
+
+      // ── Reviews sub-collection ────────────────────────────────────────────────
+      // Any authenticated patient may leave a review; reviews are immutable once posted.
+      match /reviews/{reviewId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();
+        allow update: if false;   // reviews cannot be edited
+        allow delete: if isOwner(caregiverId); // caregiver can remove their own review
+      }
+    }
+
+    // ─── Discovery Hub: Pro Doctors ──────────────────────────────────────────────
+    match /pro_doctors/{doctorId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isOwner(doctorId);
+      allow delete: if isOwner(doctorId);
+    }
+
+    // ─── Discovery Hub: Hospitals ────────────────────────────────────────────────
+    match /pro_hospitals/{hospitalId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated()
+        && request.auth.token.admin == true;
+    }
+
+    // ─── Discovery Hub: Pharmacies ────────────────────────────────────────────────
+    match /pro_pharmacies/{pharmacyId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isOwner(pharmacyId);
+      allow delete: if isOwner(pharmacyId);
+    }
+
+    // ─── Caregivers (Pro + Family work profiles) ──────────────────────────────────
+    match /caregivers/{caregiverId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isOwner(caregiverId);
+
+      // ── Assigned Patients ──────────────────────────────────────────────────────
+      match /assigned_patients/{patientId} {
+        allow read, write: if isOwner(caregiverId);
+      }
+
+      // ── Deal Requests ──────────────────────────────────────────────────────────
+      match /deal_requests/{requestId} {
+        allow read, update, delete: if isOwner(caregiverId);
+        allow create: if isAuthenticated();
+      }
+
+      // ── Care Logs ──────────────────────────────────────────────────────────────
+      match /care_logs/{logId} {
+        allow read, write: if isOwner(caregiverId);
+      }
+    }
+  }
+}

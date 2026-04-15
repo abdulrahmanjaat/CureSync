@@ -96,8 +96,18 @@ final routerProvider = Provider<GoRouter>((ref) {
         return '/dashboard';
       }
 
-      // CASE 4: Role-specific guard — block wrong dashboards
-      // Only Patient and Manager may access the discovery hub
+      // CASE 4: Role-specific guards
+
+      // add-med is write access — only patients (own data) and managers
+      // (managed patient data) are allowed. Family / pro-caregiver roles are
+      // read-only observers and must never write medication records.
+      if (currentPath.endsWith('/add-med')) {
+        if (role != UserRole.patient && role != UserRole.manager) {
+          return '/dashboard';
+        }
+      }
+
+      // Only Patient and Manager may access the discovery hub.
       if (currentPath == '/discovery' &&
           role != UserRole.patient &&
           role != UserRole.manager) {

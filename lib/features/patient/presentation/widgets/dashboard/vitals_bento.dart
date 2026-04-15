@@ -10,11 +10,17 @@ import '../../../../../features/patient/data/models/vitals_model.dart';
 import 'bento_card.dart';
 
 class VitalsBento extends ConsumerWidget {
-  const VitalsBento({super.key});
+  /// Explicit patientId to use. When provided the widget is bound to that
+  /// patient and ignores [resolvedActivePatientIdProvider] entirely.
+  /// Pass [selfPatientIdProvider] from the Patient dashboard,
+  /// pass the tracking patientId from the Manager view.
+  final String? patientId;
+
+  const VitalsBento({super.key, this.patientId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final patientId = ref.watch(resolvedActivePatientIdProvider);
+    final patientId = this.patientId ?? ref.watch(resolvedActivePatientIdProvider);
     final vitalsAsync = patientId != null
         ? ref.watch(latestVitalsProvider(patientId))
         : const AsyncValue<VitalsModel?>.data(null);

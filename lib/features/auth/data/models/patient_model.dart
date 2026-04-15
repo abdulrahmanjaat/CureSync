@@ -13,6 +13,10 @@ class PatientModel {
   /// this patient's sub-collections. Used by Firestore rules.
   final List<String> accessList;
   final DateTime createdAt;
+  /// SOS state — written by [CaregiverRepository.triggerSos] and read by
+  /// caregiver alert screens. Stored directly on the patient document.
+  final bool isSosActive;
+  final DateTime? sosTriggerTime;
 
   const PatientModel({
     this.patientId,
@@ -24,6 +28,8 @@ class PatientModel {
     this.caregiverId,
     this.accessList = const [],
     required this.createdAt,
+    this.isSosActive = false,
+    this.sosTriggerTime,
   });
 
   factory PatientModel.fromFirestore(DocumentSnapshot doc) {
@@ -41,6 +47,9 @@ class PatientModel {
           .toList(),
       createdAt:
           (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      isSosActive: data['isSosActive'] as bool? ?? false,
+      sosTriggerTime:
+          (data['sosTriggerTime'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -53,7 +62,12 @@ class PatientModel {
       'accessCode': accessCode,
       if (caregiverId != null) 'caregiverId': caregiverId,
       'accessList': accessList,
-      'createdAt': FieldValue.serverTimestamp(),
+      // Use the model's own DateTime so the local object and Firestore are in
+      // sync immediately after write (no FieldValue.serverTimestamp() mismatch).
+      'createdAt': Timestamp.fromDate(createdAt),
+      'isSosActive': isSosActive,
+      if (sosTriggerTime != null)
+        'sosTriggerTime': Timestamp.fromDate(sosTriggerTime!),
     };
   }
 

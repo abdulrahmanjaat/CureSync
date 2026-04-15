@@ -83,7 +83,9 @@ class MedicationModel {
       'reminderTimes': reminderTimes,
       'mealTiming': mealTiming.firestoreValue,
       if (notes != null && notes!.isNotEmpty) 'notes': notes,
-      'startDate': FieldValue.serverTimestamp(),
+      // Use the model's own startDate so isExpired calculations are consistent
+      // with what was written to Firestore.
+      'startDate': Timestamp.fromDate(startDate),
       'isActive': isActive,
     };
   }

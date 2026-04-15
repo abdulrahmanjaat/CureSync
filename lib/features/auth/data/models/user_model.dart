@@ -35,7 +35,7 @@ class UserModel {
       'email': email,
       'role': role,
       'photoUrl': photoUrl,
-      'createdAt': FieldValue.serverTimestamp(),
+      'createdAt': Timestamp.fromDate(createdAt),
     };
   }
 

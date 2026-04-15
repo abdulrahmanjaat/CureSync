@@ -48,4 +48,27 @@ class PatientRepository {
   Future<void> deletePatient(String patientId) async {
     await _firestore.collection('patients').doc(patientId).delete();
   }
+
+  /// Ensures a self-patient document exists at patients/{uid}.
+  /// Called once on first dashboard access for 'patient' role users.
+  /// Uses the user's UID as the document ID so the patientId is always
+  /// deterministic — no need for stream-based lookup.
+  Future<void> ensureSelfPatient({
+    required String uid,
+    required String displayName,
+  }) async {
+    final doc = _firestore.collection('patients').doc(uid);
+    final snap = await doc.get();
+    if (snap.exists) return; // already initialised
+    final patient = PatientModel(
+      patientId: uid,
+      managerId: uid,
+      name: displayName.isNotEmpty ? displayName : 'Me',
+      age: 0,
+      relation: 'Myself',
+      accessCode: PatientModel.generateAccessCode(),
+      createdAt: DateTime.now(),
+    );
+    await doc.set(patient.toFirestore());
+  }
 }

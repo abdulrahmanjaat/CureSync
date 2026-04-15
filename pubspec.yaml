@@ -68,6 +68,7 @@ dev_dependencies:
   freezed: ^2.5.8
   json_serializable: ^6.9.4
   flutter_launcher_icons: ^0.14.3
+  mocktail: ^0.3.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

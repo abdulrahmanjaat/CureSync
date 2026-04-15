@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../features/auth/presentation/providers/auth_provider.dart';
+import '../../../../features/auth/presentation/providers/role_provider.dart';
 import '../../data/models/dose_log_model.dart';
 import '../../data/models/medication_model.dart';
 import '../../data/repositories/medication_repository.dart';
@@ -12,17 +14,37 @@ final medicationRepositoryProvider = Provider<MedicationRepository>((ref) {
 });
 
 final medicationsStreamProvider =
-    StreamProvider.family<List<MedicationModel>, String>((ref, patientId) {
+    StreamProvider.autoDispose.family<List<MedicationModel>, String>(
+        (ref, patientId) {
   return ref.watch(medicationRepositoryProvider).medicationsStream(patientId);
 });
 
 final todayDoseLogsProvider =
-    StreamProvider.family<List<DoseLogModel>, String>((ref, patientId) {
-  return ref.watch(medicationRepositoryProvider).todayDoseLogsStream(patientId);
+    StreamProvider.autoDispose.family<List<DoseLogModel>, String>(
+        (ref, patientId) {
+  return ref
+      .watch(medicationRepositoryProvider)
+      .todayDoseLogsStream(patientId);
 });
 
-/// Resolves the active patient: explicit selection OR first patient in list
+/// Resolves the active patient ID, gated by role:
+///
+/// - **patient** role → always returns the user's own UID, regardless of any
+///   value stored in [activePatientIdProvider]. This hard-blocks cross-user
+///   data leakage even if a stale manager selection is still in the container.
+/// - **manager / family / pro-caregiver** → respects the explicit selection in
+///   [activePatientIdProvider], falling back to the first managed patient.
 final resolvedActivePatientIdProvider = Provider<String?>((ref) {
+  final authUser = ref.watch(authStateProvider).valueOrNull;
+  final userData = ref.watch(currentUserDataProvider).valueOrNull;
+  final role     = UserRoleX.fromString(userData?.role);
+
+  if (authUser == null) return null;
+
+  // Patient-role: always locked to their own UID.
+  if (role == UserRole.patient) return authUser.uid;
+
+  // All other roles: explicit selection, or first managed patient.
   final explicit = ref.watch(activePatientIdProvider);
   if (explicit != null) return explicit;
   final patients = ref.watch(patientsStreamProvider).valueOrNull ?? [];

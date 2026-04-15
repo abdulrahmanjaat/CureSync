@@ -1,8 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/database/app_database.dart';
@@ -10,72 +15,27 @@ import '../../../../core/services/preferences_service.dart';
 import '../../../../core/services/secure_storage_service.dart';
 import '../../../../core/utils/snackbar_service.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../providers/profile_provider.dart';
 
-// ─── 8 Premium Medical Avatars (no Firebase Storage required) ────────────────
+// ─── 8 Premium Medical Icon Avatars (offline, no Firebase Storage) ────────────
 
 const _medicalAvatars = [
-  _AvatarOption(
-    icon: Icons.medical_services_rounded,
-    color: Color(0xFF0D9488),
-    label: 'Medical',
-  ),
-  _AvatarOption(
-    icon: Icons.favorite_rounded,
-    color: Color(0xFFEF4444),
-    label: 'Heart',
-  ),
-  _AvatarOption(
-    icon: Icons.monitor_heart_rounded,
-    color: Color(0xFF0891B2),
-    label: 'Monitor',
-  ),
-  _AvatarOption(
-    icon: Icons.local_hospital_rounded,
-    color: Color(0xFFDB2777),
-    label: 'Hospital',
-  ),
-  _AvatarOption(
-    icon: Icons.psychology_rounded,
-    color: Color(0xFF7C3AED),
-    label: 'Mind',
-  ),
-  _AvatarOption(
-    icon: Icons.medication_rounded,
-    color: Color(0xFFEA580C),
-    label: 'Meds',
-  ),
-  _AvatarOption(
-    icon: Icons.biotech_rounded,
-    color: Color(0xFF16A34A),
-    label: 'Bio',
-  ),
-  _AvatarOption(
-    icon: Icons.shield_rounded,
-    color: Color(0xFF475569),
-    label: 'Shield',
-  ),
+  _AvatarOption(icon: Icons.medical_services_rounded, color: Color(0xFF0D9488), label: 'Medical'),
+  _AvatarOption(icon: Icons.favorite_rounded,         color: Color(0xFFEF4444), label: 'Heart'),
+  _AvatarOption(icon: Icons.monitor_heart_rounded,    color: Color(0xFF0891B2), label: 'Monitor'),
+  _AvatarOption(icon: Icons.local_hospital_rounded,   color: Color(0xFFDB2777), label: 'Hospital'),
+  _AvatarOption(icon: Icons.psychology_rounded,       color: Color(0xFF7C3AED), label: 'Mind'),
+  _AvatarOption(icon: Icons.medication_rounded,       color: Color(0xFFEA580C), label: 'Meds'),
+  _AvatarOption(icon: Icons.biotech_rounded,          color: Color(0xFF16A34A), label: 'Bio'),
+  _AvatarOption(icon: Icons.shield_rounded,           color: Color(0xFF475569), label: 'Shield'),
 ];
 
 class _AvatarOption {
   final IconData icon;
   final Color color;
   final String label;
-  const _AvatarOption(
-      {required this.icon, required this.color, required this.label});
+  const _AvatarOption({required this.icon, required this.color, required this.label});
 }
-
-// ─── Per-user avatar index — streamed from Drift, falls back to SharedPreferences
-
-final _profileAvatarProvider = StreamProvider.autoDispose<int>((ref) {
-  final db = ref.watch(appDatabaseProvider);
-  final user = ref.watch(authStateProvider).valueOrNull;
-  final userData = ref.watch(currentUserDataProvider).valueOrNull;
-  if (user == null) return Stream.value(PreferencesService.avatarIndex);
-  final role = userData?.role ?? 'patient';
-  return db
-      .watchProfileImage(user.uid, role)
-      .map((img) => img?.avatarIndex ?? PreferencesService.avatarIndex);
-});
 
 // ─── Profile Screen ───────────────────────────────────────────────────────────
 
@@ -84,20 +44,23 @@ class ProfileScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(authStateProvider).valueOrNull;
-    final userData = ref.watch(currentUserDataProvider).valueOrNull;
-    final avatarIndex = ref.watch(_profileAvatarProvider).valueOrNull ?? 0;
-    final selectedAvatar = _medicalAvatars[avatarIndex.clamp(
-        0, _medicalAvatars.length - 1)];
+    final user        = ref.watch(authStateProvider).valueOrNull;
+    final userData    = ref.watch(currentUserDataProvider).valueOrNull;
+    final imageRecord = ref.watch(profileImageRecordProvider).valueOrNull;
+
+    // Resolve what to display in the avatar circle
+    final localPath   = imageRecord?.localImagePath;
+    final hasPhoto    = localPath != null && File(localPath).existsSync();
+    final avatarIdx   = (imageRecord?.avatarIndex ?? 0).clamp(0, _medicalAvatars.length - 1);
+    final selectedAvatar = _medicalAvatars[avatarIdx];
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FBFA),
       body: SafeArea(
         child: ListView(
-          padding:
-              EdgeInsets.symmetric(horizontal: 20.w, vertical: 20.h),
+          padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 20.h),
           children: [
-            // ── Back + title ──
+            // ── Back + title ──────────────────────────────────────────────
             Row(
               children: [
                 GestureDetector(
@@ -111,8 +74,7 @@ class ProfileScreen extends ConsumerWidget {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(12.r),
-                      border:
-                          Border.all(color: const Color(0xFFE2E8F0)),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
                     ),
                     child: Icon(Icons.arrow_back_ios_new_rounded,
                         size: 16.w, color: const Color(0xFF0F172A)),
@@ -131,7 +93,7 @@ class ProfileScreen extends ConsumerWidget {
             ),
             SizedBox(height: 28.h),
 
-            // ── User info card ──
+            // ── User info card ────────────────────────────────────────────
             Container(
               padding: EdgeInsets.all(20.w),
               decoration: BoxDecoration(
@@ -151,30 +113,48 @@ class ProfileScreen extends ConsumerWidget {
               ),
               child: Row(
                 children: [
-                  // Avatar — tap to change
+                  // ── Avatar — tap to change ──
                   GestureDetector(
-                    onTap: () => _pickAvatar(context, ref),
-                    child: Container(
+                    onTap: () => _changePhoto(context, ref, hasPhoto, localPath, avatarIdx),
+                    child: SizedBox(
                       height: 64.w,
                       width: 64.w,
-                      decoration: BoxDecoration(
-                        color: selectedAvatar.color
-                            .withValues(alpha: 0.25),
-                        borderRadius: BorderRadius.circular(20.r),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.3),
-                          width: 2,
-                        ),
-                      ),
                       child: Stack(
                         children: [
-                          Center(
-                            child: Icon(
-                              selectedAvatar.icon,
-                              size: 30.w,
-                              color: Colors.white,
-                            ),
+                          // Photo or icon
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(20.r),
+                            child: hasPhoto
+                                ? Image.file(
+                                    File(localPath),
+                                    width: 64.w,
+                                    height: 64.w,
+                                    fit: BoxFit.cover,
+                                  )
+                                : Container(
+                                    width: 64.w,
+                                    height: 64.w,
+                                    decoration: BoxDecoration(
+                                      color: selectedAvatar.color
+                                          .withValues(alpha: 0.25),
+                                      borderRadius:
+                                          BorderRadius.circular(20.r),
+                                      border: Border.all(
+                                        color:
+                                            Colors.white.withValues(alpha: 0.3),
+                                        width: 2,
+                                      ),
+                                    ),
+                                    child: Center(
+                                      child: Icon(
+                                        selectedAvatar.icon,
+                                        size: 30.w,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
                           ),
+                          // Edit badge
                           Positioned(
                             bottom: 2,
                             right: 2,
@@ -186,10 +166,9 @@ class ProfileScreen extends ConsumerWidget {
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black
-                                        .withValues(alpha: 0.15),
+                                    color: Colors.black.withValues(alpha: 0.15),
                                     blurRadius: 4,
-                                  )
+                                  ),
                                 ],
                               ),
                               child: Icon(
@@ -222,8 +201,7 @@ class ProfileScreen extends ConsumerWidget {
                           user?.email ?? '',
                           style: GoogleFonts.inter(
                             fontSize: 12.sp,
-                            color:
-                                Colors.white.withValues(alpha: 0.7),
+                            color: Colors.white.withValues(alpha: 0.7),
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -232,8 +210,7 @@ class ProfileScreen extends ConsumerWidget {
                           padding: EdgeInsets.symmetric(
                               horizontal: 8.w, vertical: 3.h),
                           decoration: BoxDecoration(
-                            color:
-                                Colors.white.withValues(alpha: 0.15),
+                            color: Colors.white.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(6.r),
                           ),
                           child: Text(
@@ -255,10 +232,9 @@ class ProfileScreen extends ConsumerWidget {
 
             SizedBox(height: 20.h),
 
-            // ── Avatar picker hint ──
             Center(
               child: Text(
-                'Tap avatar to choose your look',
+                'Tap avatar to change your profile photo',
                 style: GoogleFonts.inter(
                   fontSize: 11.sp,
                   color: const Color(0xFF94A3B8),
@@ -268,7 +244,7 @@ class ProfileScreen extends ConsumerWidget {
 
             SizedBox(height: 28.h),
 
-            // ── Settings section ──
+            // ── Settings section ──────────────────────────────────────────
             Text(
               'Settings',
               style: GoogleFonts.poppins(
@@ -296,21 +272,18 @@ class ProfileScreen extends ConsumerWidget {
             ),
             SizedBox(height: 28.h),
 
-            // ── Sign out ──
+            // ── Sign out ──────────────────────────────────────────────────
             GestureDetector(
               onTap: () async {
                 HapticFeedback.mediumImpact();
-                await ref
-                    .read(authControllerProvider.notifier)
-                    .signOut();
+                await ref.read(authControllerProvider.notifier).signOut();
               },
               child: Container(
                 padding: EdgeInsets.symmetric(vertical: 16.h),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16.r),
-                  border: Border.all(
-                      color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -332,7 +305,7 @@ class ProfileScreen extends ConsumerWidget {
             ),
             SizedBox(height: 12.h),
 
-            // ── Delete account ──
+            // ── Delete account ────────────────────────────────────────────
             GestureDetector(
               onTap: () => _showDeleteDialog(context, ref),
               child: Container(
@@ -341,8 +314,7 @@ class ProfileScreen extends ConsumerWidget {
                   color: AppColors.error.withValues(alpha: 0.04),
                   borderRadius: BorderRadius.circular(16.r),
                   border: Border.all(
-                      color:
-                          AppColors.error.withValues(alpha: 0.2)),
+                      color: AppColors.error.withValues(alpha: 0.2)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -379,28 +351,116 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
+  // ── Role label ───────────────────────────────────────────────────────────────
+
   String _roleLabel(String? role) => switch (role) {
-        'patient' => 'PATIENT',
-        'family' => 'FAMILY',
-        'pro_caregiver' => 'PRO CAREGIVER',
-        _ => 'USER',
+        'patient'      => 'PATIENT',
+        'family'       => 'FAMILY',
+        'pro_caregiver'=> 'PRO CAREGIVER',
+        'manager'      => 'MANAGER',
+        _              => 'USER',
       };
 
-  void _pickAvatar(BuildContext context, WidgetRef ref) {
-    final user = ref.read(authStateProvider).valueOrNull;
-    final userData = ref.read(currentUserDataProvider).valueOrNull;
-    final currentIndex = ref.read(_profileAvatarProvider).valueOrNull ?? 0;
+  // ── Photo change sheet ───────────────────────────────────────────────────────
 
+  void _changePhoto(
+    BuildContext context,
+    WidgetRef ref,
+    bool hasPhoto,
+    String? currentPath,
+    int currentAvatarIdx,
+  ) {
     HapticFeedback.selectionClick();
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _PhotoPickerSheet(
+        hasPhoto: hasPhoto,
+        onGallery: () => _pickFromSource(context, ref, ImageSource.gallery),
+        onCamera:  () => _pickFromSource(context, ref, ImageSource.camera),
+        onIcon:    () => _showIconPicker(context, ref, currentAvatarIdx),
+        onRemove:  hasPhoto
+            ? () => _removePhoto(ref)
+            : null,
+      ),
+    );
+  }
+
+  // ── Pick from gallery or camera ──────────────────────────────────────────────
+
+  Future<void> _pickFromSource(
+      BuildContext context, WidgetRef ref, ImageSource source) async {
+    final user     = ref.read(authStateProvider).valueOrNull;
+    final userData = ref.read(currentUserDataProvider).valueOrNull;
+    if (user == null) return;
+
+    final picker = ImagePicker();
+    final XFile? file = await picker.pickImage(
+      source:       source,
+      imageQuality: 85,
+      maxWidth:     512,
+      maxHeight:    512,
+    );
+    if (file == null) return;
+
+    final role = userData?.role ?? 'patient';
+
+    // Copy to a stable, app-owned path so the file survives cache clears
+    final appDir     = await getApplicationDocumentsDirectory();
+    final stablePath = p.join(
+        appDir.path, 'profile_${user.uid}_$role.jpg');
+    await File(file.path).copy(stablePath);
+
+    // Persist to Drift (preserves existing avatarIndex for revert)
+    await ref
+        .read(appDatabaseProvider)
+        .upsertProfileImagePath(user.uid, role, stablePath);
+
+    // SharedPreferences fallback marker (index 0 = photo mode)
+    await PreferencesService.setAvatarIndex(0);
+
+    if (context.mounted) {
+      SnackbarService.showSuccess('Profile photo updated');
+    }
+  }
+
+  // ── Remove photo ─────────────────────────────────────────────────────────────
+
+  Future<void> _removePhoto(WidgetRef ref) async {
+    final user     = ref.read(authStateProvider).valueOrNull;
+    final userData = ref.read(currentUserDataProvider).valueOrNull;
+    if (user == null) return;
+
+    final role = userData?.role ?? 'patient';
+
+    // Delete local file if it exists
+    final appDir     = await getApplicationDocumentsDirectory();
+    final stablePath = p.join(appDir.path, 'profile_${user.uid}_$role.jpg');
+    final file = File(stablePath);
+    if (await file.exists()) await file.delete();
+
+    // Clear path in Drift (reverts to icon avatar)
+    await ref
+        .read(appDatabaseProvider)
+        .upsertProfileImagePath(user.uid, role, null);
+  }
+
+  // ── Icon avatar picker ───────────────────────────────────────────────────────
+
+  void _showIconPicker(BuildContext context, WidgetRef ref, int currentIdx) {
+    final user     = ref.read(authStateProvider).valueOrNull;
+    final userData = ref.read(currentUserDataProvider).valueOrNull;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
       builder: (_) => _AvatarPickerSheet(
-        currentIndex: currentIndex,
+        currentIndex: currentIdx,
         onPick: (i) {
           HapticFeedback.selectionClick();
-          // Persist per-user in Drift; keep SharedPreferences as fallback
           if (user != null) {
+            // upsertProfileImage clears localImagePath → reverts to icon mode
             ref.read(appDatabaseProvider).upsertProfileImage(
                   user.uid,
                   userData?.role ?? 'patient',
@@ -418,8 +478,7 @@ class ProfileScreen extends ConsumerWidget {
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20.r),
-        ),
+            borderRadius: BorderRadius.circular(20.r)),
         title: Text('Delete Account',
             style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
         content: Text(
@@ -454,7 +513,166 @@ class ProfileScreen extends ConsumerWidget {
   }
 }
 
-// ─── Avatar Picker Bottom Sheet ───────────────────────────────────────────────
+// ─── Photo Picker Bottom Sheet ────────────────────────────────────────────────
+// Three options: Gallery, Camera, Choose Icon Avatar
+// Optional fourth option: Remove Photo (only shown when a photo is active)
+
+class _PhotoPickerSheet extends StatelessWidget {
+  final bool hasPhoto;
+  final VoidCallback onGallery;
+  final VoidCallback onCamera;
+  final VoidCallback onIcon;
+  final VoidCallback? onRemove;
+
+  const _PhotoPickerSheet({
+    required this.hasPhoto,
+    required this.onGallery,
+    required this.onCamera,
+    required this.onIcon,
+    this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(20.w, 12.h, 20.w, 36.h),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Handle
+          Center(
+            child: Container(
+              width: 40.w,
+              height: 4.h,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(2.r),
+              ),
+            ),
+          ),
+          SizedBox(height: 20.h),
+
+          Text(
+            'Change Profile Photo',
+            style: GoogleFonts.poppins(
+              fontSize: 16.sp,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF0F172A),
+            ),
+          ),
+          SizedBox(height: 20.h),
+
+          _PickerOption(
+            icon: Icons.photo_library_rounded,
+            color: const Color(0xFF0891B2),
+            label: 'Choose from Gallery',
+            onTap: () {
+              Navigator.pop(context);
+              onGallery();
+            },
+          ),
+          SizedBox(height: 10.h),
+          _PickerOption(
+            icon: Icons.camera_alt_rounded,
+            color: const Color(0xFF16A34A),
+            label: 'Take a Photo',
+            onTap: () {
+              Navigator.pop(context);
+              onCamera();
+            },
+          ),
+          SizedBox(height: 10.h),
+          _PickerOption(
+            icon: Icons.face_rounded,
+            color: const Color(0xFF7C3AED),
+            label: 'Choose Icon Avatar',
+            onTap: () {
+              Navigator.pop(context);
+              onIcon();
+            },
+          ),
+
+          if (onRemove != null) ...[
+            SizedBox(height: 10.h),
+            _PickerOption(
+              icon: Icons.delete_outline_rounded,
+              color: const Color(0xFFEF4444),
+              label: 'Remove Current Photo',
+              onTap: () {
+                Navigator.pop(context);
+                onRemove!();
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PickerOption extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String label;
+  final VoidCallback onTap;
+
+  const _PickerOption({
+    required this.icon,
+    required this.color,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(14.r),
+          border: Border.all(color: color.withValues(alpha: 0.15)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              height: 36.w,
+              width: 36.w,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10.r),
+              ),
+              child: Icon(icon, size: 20.w, color: color),
+            ),
+            SizedBox(width: 14.w),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 14.sp,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF0F172A),
+              ),
+            ),
+            const Spacer(),
+            Icon(Icons.chevron_right_rounded,
+                size: 20.w, color: const Color(0xFFCBD5E1)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Icon Avatar Picker Sheet ─────────────────────────────────────────────────
 
 class _AvatarPickerSheet extends StatefulWidget {
   final int currentIndex;
@@ -484,8 +702,7 @@ class _AvatarPickerSheetState extends State<_AvatarPickerSheet> {
       padding: EdgeInsets.fromLTRB(20.w, 12.h, 20.w, 36.h),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius:
-            BorderRadius.vertical(top: Radius.circular(24.r)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -503,7 +720,7 @@ class _AvatarPickerSheetState extends State<_AvatarPickerSheet> {
           ),
           SizedBox(height: 20.h),
           Text(
-            'Choose Your Avatar',
+            'Choose Icon Avatar',
             style: GoogleFonts.poppins(
               fontSize: 16.sp,
               fontWeight: FontWeight.w700,
@@ -512,7 +729,7 @@ class _AvatarPickerSheetState extends State<_AvatarPickerSheet> {
           ),
           SizedBox(height: 6.h),
           Text(
-            'Free plan — no photo upload needed',
+            'No photo upload required',
             style: GoogleFonts.inter(
               fontSize: 12.sp,
               color: const Color(0xFF94A3B8),
@@ -520,12 +737,10 @@ class _AvatarPickerSheetState extends State<_AvatarPickerSheet> {
           ),
           SizedBox(height: 24.h),
 
-          // Grid of 8 avatars
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            gridDelegate:
-                SliverGridDelegateWithFixedCrossAxisCount(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 4,
               crossAxisSpacing: 12.w,
               mainAxisSpacing: 12.h,
@@ -549,19 +764,17 @@ class _AvatarPickerSheetState extends State<_AvatarPickerSheet> {
                         : const Color(0xFFF8FBFA),
                     borderRadius: BorderRadius.circular(16.r),
                     border: Border.all(
-                      color: isSelected
-                          ? av.color
-                          : const Color(0xFFE2E8F0),
+                      color:
+                          isSelected ? av.color : const Color(0xFFE2E8F0),
                       width: isSelected ? 2 : 1,
                     ),
                     boxShadow: isSelected
                         ? [
                             BoxShadow(
-                              color:
-                                  av.color.withValues(alpha: 0.2),
+                              color: av.color.withValues(alpha: 0.2),
                               blurRadius: 10,
                               offset: const Offset(0, 4),
-                            )
+                            ),
                           ]
                         : [],
                   ),
@@ -581,7 +794,6 @@ class _AvatarPickerSheetState extends State<_AvatarPickerSheet> {
 
           SizedBox(height: 24.h),
 
-          // Confirm button
           GestureDetector(
             onTap: () {
               widget.onPick(_selected);
@@ -599,7 +811,7 @@ class _AvatarPickerSheetState extends State<_AvatarPickerSheet> {
                         .withValues(alpha: 0.35),
                     blurRadius: 14,
                     offset: const Offset(0, 6),
-                  )
+                  ),
                 ],
               ),
               child: Center(
@@ -639,13 +851,11 @@ class _SettingsTile extends StatelessWidget {
       onTap: onTap,
       child: Container(
         margin: EdgeInsets.only(bottom: 8.h),
-        padding:
-            EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14.r),
-          border: Border.all(
-              color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
         ),
         child: Row(
           children: [

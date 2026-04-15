@@ -94,7 +94,7 @@ class _MainWrapperState extends ConsumerState<MainWrapper> {
 
     final (screens, navItems) = switch (role) {
       UserRole.family => (_familyScreens, _familyNavItems),
-      UserRole.proCaegiver => (_proScreens, _proNavItems),
+      UserRole.proCaregiver => (_proScreens, _proNavItems),
       UserRole.manager => (_managerScreens, _managerNavItems),
       _ => (_patientScreens, _patientNavItems), // patient + null fallback
     };
