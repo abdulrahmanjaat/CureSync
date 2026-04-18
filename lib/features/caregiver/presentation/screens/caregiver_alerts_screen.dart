@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
@@ -19,177 +20,285 @@ class CaregiverAlertsScreen extends ConsumerStatefulWidget {
 }
 
 class _CaregiverAlertsScreenState
-    extends ConsumerState<CaregiverAlertsScreen> {
-  int _tab = 0; // 0=Emergency, 1=Missed Meds, 2=Hiring
+    extends ConsumerState<CaregiverAlertsScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
 
-  static const _tabs = ['Emergency', 'Missed Meds', 'Hiring'];
-  static const _tabIcons = [
-    Icons.sos_rounded,
-    Icons.medication_rounded,
-    Icons.handshake_rounded,
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final sosPatient = ref.watch(sosTriggerProvider);
     final missedCount = ref.watch(totalMissedMedsProvider);
     final pendingDeals = ref.watch(pendingDealCountProvider);
-
-    final badges = [
-      sosPatient != null ? 1 : 0,
-      missedCount,
-      pendingDeals,
-    ];
+    final totalAlerts =
+        (sosPatient != null ? 1 : 0) + missedCount + pendingDeals;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FBFA),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // ── Header ────────────────────────────────────────────────
-            Padding(
-              padding: EdgeInsets.fromLTRB(20.w, 16.h, 20.w, 0),
-              child: Row(
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Alerts',
-                        style: GoogleFonts.poppins(
-                          fontSize: 26.sp,
-                          fontWeight: FontWeight.w800,
-                          color: const Color(0xFF0F172A),
-                        ),
-                      ),
-                      Text(
-                        'Real-time patient notifications',
-                        style: GoogleFonts.inter(
-                          fontSize: 12.sp,
-                          color: const Color(0xFF94A3B8),
-                        ),
-                      ),
-                    ],
+      backgroundColor: const Color(0xFFF1F5F9),
+      // NestedScrollView is intentionally NOT used here.
+      // NestedScrollView requires every tab body to expose a primary scroll
+      // controller; non-scrollable bodies (e.g. _EmptyState) cause a layout
+      // freeze. A simple Column + Expanded avoids that entirely.
+      body: Column(
+        children: [
+          // ── Gradient header ──────────────────────────────────────────────
+          _AlertsHeader(
+            totalAlerts: totalAlerts,
+            sosCount: sosPatient != null ? 1 : 0,
+            missedCount: missedCount,
+            pendingCount: pendingDeals,
+            onBack: Navigator.canPop(context) ? () => context.pop() : null,
+          ),
+
+          // ── Pinned tab bar ───────────────────────────────────────────────
+          Container(
+            color: const Color(0xFFF1F5F9),
+            child: TabBar(
+              controller: _tabController,
+              labelPadding: EdgeInsets.symmetric(horizontal: 4.w),
+              indicator: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10.r),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.07),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
                   ),
                 ],
               ),
-            ),
-
-            SizedBox(height: 16.h),
-
-            // ── Tab Row ───────────────────────────────────────────────
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20.w),
-              child: Container(
-                height: 48.h,
-                padding: EdgeInsets.all(4.w),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(14.r),
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
+              padding:
+                  EdgeInsets.symmetric(horizontal: 20.w, vertical: 8.h),
+              tabs: [
+                _TabItem(
+                  icon: Icons.sos_rounded,
+                  label: 'Emergency',
+                  badge: sosPatient != null ? 1 : 0,
+                  color: const Color(0xFFEF4444),
                 ),
-                child: Row(
-                  children: List.generate(_tabs.length, (i) {
-                    final isActive = i == _tab;
-                    final badge = badges[i];
-                    return Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          HapticFeedback.selectionClick();
-                          setState(() => _tab = i);
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 220),
-                          curve: Curves.easeOutCubic,
-                          decoration: BoxDecoration(
-                            color: isActive
-                                ? Colors.white
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(10.r),
-                            boxShadow: isActive
-                                ? [
-                                    BoxShadow(
-                                      color: Colors.black
-                                          .withValues(alpha: 0.06),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 2),
-                                    )
-                                  ]
-                                : [],
-                          ),
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.center,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    _tabIcons[i],
-                                    size: 14.w,
-                                    color: isActive
-                                        ? _tabColor(i)
-                                        : const Color(0xFF94A3B8),
-                                  ),
-                                  SizedBox(width: 4.w),
-                                  Text(
-                                    _tabs[i],
-                                    style: GoogleFonts.inter(
-                                      fontSize: 11.sp,
-                                      fontWeight: isActive
-                                          ? FontWeight.w700
-                                          : FontWeight.w500,
-                                      color: isActive
-                                          ? _tabColor(i)
-                                          : const Color(0xFF94A3B8),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              if (badge > 0)
-                                Positioned(
-                                  top: 4.h,
-                                  right: 6.w,
-                                  child: Container(
-                                    height: 16.w,
-                                    width: 16.w,
-                                    decoration: BoxDecoration(
-                                      color: _tabColor(i),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Center(
-                                      child: Text(
-                                        '$badge',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 9.sp,
-                                          fontWeight: FontWeight.w800,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
+                _TabItem(
+                  icon: Icons.medication_rounded,
+                  label: 'Missed Meds',
+                  badge: missedCount,
+                  color: const Color(0xFFF59E0B),
+                ),
+                _TabItem(
+                  icon: Icons.handshake_rounded,
+                  label: 'Hiring',
+                  badge: pendingDeals,
+                  color: const Color(0xFF0D9488),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Tab content fills remaining height ───────────────────────────
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: const [
+                _EmergencyTab(),
+                _MissedMedsTab(),
+                _HiringTab(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Alerts Header ────────────────────────────────────────────────────────────
+
+class _AlertsHeader extends StatelessWidget {
+  final int totalAlerts;
+  final int sosCount;
+  final int missedCount;
+  final int pendingCount;
+  final VoidCallback? onBack;
+
+  const _AlertsHeader({
+    required this.totalAlerts,
+    required this.sosCount,
+    required this.missedCount,
+    required this.pendingCount,
+    this.onBack,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasAlert = totalAlerts > 0;
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+          20.w, MediaQuery.of(context).padding.top + 16.h, 20.w, 24.h),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: hasAlert
+              ? [const Color(0xFFEF4444), const Color(0xFFDC2626)]
+              : [const Color(0xFF0D9488), const Color(0xFF0F766E)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius:
+            BorderRadius.vertical(bottom: Radius.circular(32.r)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Back button + title row
+          Row(
+            children: [
+              if (onBack != null)
+                GestureDetector(
+                  onTap: onBack,
+                  child: Container(
+                    height: 36.w,
+                    width: 36.w,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(10.r),
+                    ),
+                    child: Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      size: 16.w,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              if (onBack != null) SizedBox(width: 12.w),
+              Expanded(
+                child: Text(
+                  hasAlert ? 'Active Alerts' : 'All Clear',
+                  style: GoogleFonts.poppins(
+                    fontSize: 22.sp,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
                 ),
               ),
+              // Total badge
+              if (totalAlerts > 0)
+                Container(
+                  padding: EdgeInsets.symmetric(
+                      horizontal: 12.w, vertical: 6.h),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.22),
+                    borderRadius: BorderRadius.circular(20.r),
+                  ),
+                  child: Text(
+                    '$totalAlerts alert${totalAlerts == 1 ? '' : 's'}',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12.sp,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          SizedBox(height: 6.h),
+          Text(
+            hasAlert
+                ? 'Immediate attention required'
+                : 'No active emergencies or missed meds',
+            style: GoogleFonts.inter(
+              fontSize: 13.sp,
+              color: Colors.white.withValues(alpha: 0.78),
             ),
+          ),
 
-            SizedBox(height: 16.h),
+          SizedBox(height: 20.h),
 
-            // ── Content ───────────────────────────────────────────────
-            Expanded(
-              child: IndexedStack(
-                index: _tab,
-                children: const [
-                  _EmergencyTab(),
-                  _MissedMedsTab(),
-                  _HiringTab(),
-                ],
+          // ── Stat chips ──────────────────────────────────────────────
+          Row(
+            children: [
+              _StatChip(
+                icon: Icons.sos_rounded,
+                label: 'SOS',
+                count: sosCount,
+                activeColor: Colors.white,
+              ),
+              SizedBox(width: 10.w),
+              _StatChip(
+                icon: Icons.medication_rounded,
+                label: 'Missed',
+                count: missedCount,
+                activeColor: Colors.white,
+              ),
+              SizedBox(width: 10.w),
+              _StatChip(
+                icon: Icons.handshake_rounded,
+                label: 'Requests',
+                count: pendingCount,
+                activeColor: Colors.white,
+              ),
+            ],
+          ),
+        ],
+      ),
+    ).animate().fadeIn(duration: 350.ms).slideY(begin: -0.04, end: 0, duration: 350.ms);
+  }
+}
+
+class _StatChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final int count;
+  final Color activeColor;
+
+  const _StatChip({
+    required this.icon,
+    required this.label,
+    required this.count,
+    required this.activeColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: EdgeInsets.symmetric(vertical: 12.h),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: count > 0 ? 0.22 : 0.10),
+          borderRadius: BorderRadius.circular(14.r),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: count > 0 ? 0.4 : 0.15),
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(icon,
+                size: 18.w,
+                color: Colors.white.withValues(alpha: count > 0 ? 1 : 0.5)),
+            SizedBox(height: 4.h),
+            Text(
+              '$count',
+              style: GoogleFonts.poppins(
+                fontSize: 18.sp,
+                fontWeight: FontWeight.w800,
+                color: Colors.white.withValues(alpha: count > 0 ? 1 : 0.5),
+              ),
+            ),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 9.sp,
+                color: Colors.white.withValues(alpha: count > 0 ? 0.9 : 0.45),
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],
@@ -197,13 +306,73 @@ class _CaregiverAlertsScreenState
       ),
     );
   }
+}
 
-  Color _tabColor(int i) {
-    return switch (i) {
-      0 => const Color(0xFFEF4444),
-      1 => const Color(0xFFF59E0B),
-      _ => const Color(0xFF0D9488),
-    };
+
+// ─── Tab Item ─────────────────────────────────────────────────────────────────
+
+class _TabItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final int badge;
+  final Color color;
+
+  const _TabItem({
+    required this.icon,
+    required this.label,
+    required this.badge,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tab(
+      height: 42.h,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 14.w),
+              SizedBox(width: 5.w),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 11.sp,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          if (badge > 0)
+            Positioned(
+              top: -2.h,
+              right: -10.w,
+              child: Container(
+                height: 15.w,
+                width: 15.w,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    '$badge',
+                    style: GoogleFonts.inter(
+                      fontSize: 8.sp,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 
@@ -217,19 +386,19 @@ class _EmergencyTab extends ConsumerWidget {
     final sosPatient = ref.watch(sosTriggerProvider);
 
     if (sosPatient == null) {
-      return _EmptyState(
+      return const _EmptyState(
         icon: Icons.shield_rounded,
-        iconColor: const Color(0xFF16A34A),
+        iconColor: Color(0xFF16A34A),
         title: 'All Clear',
         subtitle: 'No active emergencies from any\nof your patients.',
       );
     }
 
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 20.w),
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(20.w, 20.h, 20.w, 40.h),
       child: Column(
         children: [
-          // SOS Alert Card
+          // ── SOS Alert Card ──────────────────────────────────────────
           Container(
             padding: EdgeInsets.all(20.w),
             decoration: BoxDecoration(
@@ -238,14 +407,13 @@ class _EmergencyTab extends ConsumerWidget {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius: BorderRadius.circular(20.r),
+              borderRadius: BorderRadius.circular(24.r),
               boxShadow: [
                 BoxShadow(
-                  color:
-                      const Color(0xFFEF4444).withValues(alpha: 0.4),
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.35),
                   blurRadius: 24,
-                  offset: const Offset(0, 8),
-                )
+                  offset: const Offset(0, 10),
+                ),
               ],
             ),
             child: Column(
@@ -253,16 +421,16 @@ class _EmergencyTab extends ConsumerWidget {
                 Row(
                   children: [
                     Container(
-                      height: 48.w,
-                      width: 48.w,
+                      height: 56.w,
+                      width: 56.w,
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
+                        color: Colors.white.withValues(alpha: 0.18),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(Icons.sos_rounded,
-                          size: 26.w, color: Colors.white),
+                          size: 30.w, color: Colors.white),
                     ),
-                    SizedBox(width: 14.w),
+                    SizedBox(width: 16.w),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -270,27 +438,25 @@ class _EmergencyTab extends ConsumerWidget {
                           Text(
                             'SOS ALERT',
                             style: GoogleFonts.poppins(
-                              fontSize: 13.sp,
+                              fontSize: 11.sp,
                               fontWeight: FontWeight.w800,
-                              color:
-                                  Colors.white.withValues(alpha: 0.8),
-                              letterSpacing: 1.5,
+                              color: Colors.white.withValues(alpha: 0.75),
+                              letterSpacing: 2,
                             ),
                           ),
                           Text(
                             sosPatient.patientName,
                             style: GoogleFonts.poppins(
-                              fontSize: 18.sp,
+                              fontSize: 20.sp,
                               fontWeight: FontWeight.w800,
                               color: Colors.white,
                             ),
                           ),
                           Text(
-                            'Emergency alert triggered',
+                            'Emergency alert triggered — respond now',
                             style: GoogleFonts.inter(
                               fontSize: 12.sp,
-                              color:
-                                  Colors.white.withValues(alpha: 0.75),
+                              color: Colors.white.withValues(alpha: 0.75),
                             ),
                           ),
                         ],
@@ -298,7 +464,7 @@ class _EmergencyTab extends ConsumerWidget {
                     ),
                   ],
                 ),
-                SizedBox(height: 16.h),
+                SizedBox(height: 20.h),
                 Row(
                   children: [
                     Expanded(
@@ -309,14 +475,14 @@ class _EmergencyTab extends ConsumerWidget {
                               '/caregiver/patient/${sosPatient.patientId}');
                         },
                         child: Container(
-                          height: 44.h,
+                          height: 48.h,
                           decoration: BoxDecoration(
                             color: Colors.white,
-                            borderRadius: BorderRadius.circular(12.r),
+                            borderRadius: BorderRadius.circular(14.r),
                           ),
                           child: Center(
                             child: Text(
-                              'View Profile',
+                              'View Dashboard',
                               style: GoogleFonts.inter(
                                 fontSize: 14.sp,
                                 fontWeight: FontWeight.w700,
@@ -327,7 +493,7 @@ class _EmergencyTab extends ConsumerWidget {
                         ),
                       ),
                     ),
-                    SizedBox(width: 10.w),
+                    SizedBox(width: 12.w),
                     Expanded(
                       child: Consumer(
                         builder: (_, ref, _) => GestureDetector(
@@ -338,14 +504,15 @@ class _EmergencyTab extends ConsumerWidget {
                                 .clearSos(sosPatient.patientId);
                           },
                           child: Container(
-                            height: 44.h,
+                            height: 48.h,
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(12.r),
+                              color:
+                                  Colors.white.withValues(alpha: 0.18),
+                              borderRadius:
+                                  BorderRadius.circular(14.r),
                               border: Border.all(
-                                color:
-                                    Colors.white.withValues(alpha: 0.4),
-                              ),
+                                  color: Colors.white
+                                      .withValues(alpha: 0.4)),
                             ),
                             child: Center(
                               child: Text(
@@ -365,7 +532,11 @@ class _EmergencyTab extends ConsumerWidget {
                 ),
               ],
             ),
-          ),
+          )
+              .animate(onPlay: (c) => c.repeat(reverse: true))
+              .shimmer(
+                  duration: 1800.ms,
+                  color: Colors.white.withValues(alpha: 0.06)),
         ],
       ),
     );
@@ -379,38 +550,38 @@ class _MissedMedsTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final patients =
-        ref.watch(assignedPatientsProvider).valueOrNull ?? [];
-    final overduePatients = patients
+    final patients = ref.watch(assignedPatientsProvider).valueOrNull ?? [];
+    final now = DateTime.now();
+    final nowMins = now.hour * 60 + now.minute;
+
+    final overdueList = patients
         .where((p) =>
             ref.watch(patientMedStatusProvider(p.patientId)) ==
             MedStatus.overdue)
         .toList();
 
-    if (overduePatients.isEmpty) {
+    if (overdueList.isEmpty) {
       return const _EmptyState(
         icon: Icons.check_circle_rounded,
         iconColor: Color(0xFF16A34A),
         title: 'All Meds On Track',
-        subtitle: 'No missed medications across\nyour assigned patients.',
+        subtitle:
+            'No missed medications across\nyour assigned patients.',
       );
     }
 
     return ListView.separated(
-      padding: EdgeInsets.symmetric(horizontal: 20.w),
-      itemCount: overduePatients.length,
-      separatorBuilder: (_, _) => SizedBox(height: 10.h),
+      padding: EdgeInsets.fromLTRB(20.w, 20.h, 20.w, 40.h),
+      itemCount: overdueList.length,
+      separatorBuilder: (_, _) => SizedBox(height: 12.h),
       itemBuilder: (_, i) {
-        final p = overduePatients[i];
-        final meds = ref
-                .watch(assignedPatientMedsProvider(p.patientId))
-                .valueOrNull ??
-            [];
+        final p = overdueList[i];
+        final meds =
+            ref.watch(assignedPatientMedsProvider(p.patientId)).valueOrNull ??
+                [];
         final takenKeys =
             ref.watch(patientTakenKeysProvider(p.patientId)).valueOrNull ??
                 [];
-        final now = DateTime.now();
-        final nowMins = now.hour * 60 + now.minute;
 
         final overdueMeds = <String>[];
         for (final m in meds.where((m) => m.isActive && !m.isExpired)) {
@@ -421,7 +592,7 @@ class _MissedMedsTab extends ConsumerWidget {
                 (int.tryParse(parts[1]) ?? 0);
             final key = '${m.id}_$t';
             if (mMins < nowMins && !takenKeys.contains(key)) {
-              overdueMeds.add('${m.name} @ $t');
+              overdueMeds.add('${m.name} at $t');
             }
           }
         }
@@ -432,29 +603,40 @@ class _MissedMedsTab extends ConsumerWidget {
             context.push('/caregiver/patient/${p.patientId}');
           },
           child: Container(
-            padding: EdgeInsets.all(16.w),
+            padding: EdgeInsets.all(18.w),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(16.r),
+              borderRadius: BorderRadius.circular(20.r),
               border: Border.all(
-                  color: const Color(0xFFF59E0B).withValues(alpha: 0.3)),
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.25)),
               boxShadow: [
                 BoxShadow(
                   color: const Color(0xFFF59E0B).withValues(alpha: 0.08),
-                  blurRadius: 12,
-                  offset: const Offset(0, 3),
-                )
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
               ],
             ),
             child: Row(
               children: [
                 Container(
-                  height: 44.w,
-                  width: 44.w,
+                  height: 52.w,
+                  width: 52.w,
                   decoration: BoxDecoration(
-                    color:
-                        const Color(0xFFF59E0B).withValues(alpha: 0.1),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFF59E0B), Color(0xFFD97706)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
                     shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFF59E0B)
+                            .withValues(alpha: 0.3),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
                   child: Center(
                     child: Text(
@@ -462,33 +644,50 @@ class _MissedMedsTab extends ConsumerWidget {
                           ? p.patientName[0].toUpperCase()
                           : '?',
                       style: GoogleFonts.poppins(
-                        fontSize: 18.sp,
+                        fontSize: 20.sp,
                         fontWeight: FontWeight.w700,
-                        color: const Color(0xFFF59E0B),
+                        color: Colors.white,
                       ),
                     ),
                   ),
                 ),
-                SizedBox(width: 12.w),
+                SizedBox(width: 14.w),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(p.patientName,
-                          style: GoogleFonts.poppins(
-                            fontSize: 14.sp,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF0F172A),
-                          )),
                       Text(
-                        '${overdueMeds.length} med${overdueMeds.length == 1 ? '' : 's'} overdue',
-                        style: GoogleFonts.inter(
-                          fontSize: 12.sp,
-                          color: const Color(0xFFF59E0B),
-                          fontWeight: FontWeight.w600,
+                        p.patientName,
+                        style: GoogleFonts.poppins(
+                          fontSize: 15.sp,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF0F172A),
                         ),
                       ),
-                      if (overdueMeds.isNotEmpty)
+                      SizedBox(height: 3.h),
+                      Row(
+                        children: [
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 8.w, vertical: 3.h),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF59E0B)
+                                  .withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6.r),
+                            ),
+                            child: Text(
+                              '${overdueMeds.length} overdue',
+                              style: GoogleFonts.inter(
+                                fontSize: 11.sp,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFFF59E0B),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (overdueMeds.isNotEmpty) ...[
+                        SizedBox(height: 5.h),
                         Text(
                           overdueMeds.take(2).join('  ·  '),
                           style: GoogleFonts.inter(
@@ -498,14 +697,18 @@ class _MissedMedsTab extends ConsumerWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
+                      ],
                     ],
                   ),
                 ),
-                Icon(Icons.chevron_right_rounded,
-                    size: 18.w, color: const Color(0xFFCBD5E1)),
+                Icon(Icons.arrow_forward_ios_rounded,
+                    size: 15.w, color: const Color(0xFFCBD5E1)),
               ],
             ),
-          ),
+          )
+              .animate()
+              .fadeIn(duration: 350.ms, delay: (i * 60).ms)
+              .slideX(begin: 0.04, end: 0, duration: 350.ms, delay: (i * 60).ms),
         );
       },
     );
@@ -520,8 +723,9 @@ class _HiringTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final uid = ref.watch(authStateProvider).valueOrNull?.uid ?? '';
-    final dealsAsync = ref.watch(dealRequestsProvider);
-    final pendingDeals = dealsAsync.valueOrNull
+    final pendingDeals = ref
+            .watch(dealRequestsProvider)
+            .valueOrNull
             ?.where((d) => d.status == DealStatus.pending)
             .toList() ??
         [];
@@ -537,12 +741,18 @@ class _HiringTab extends ConsumerWidget {
     }
 
     return ListView.separated(
-      padding: EdgeInsets.symmetric(horizontal: 20.w),
+      padding: EdgeInsets.fromLTRB(20.w, 20.h, 20.w, 40.h),
       itemCount: pendingDeals.length,
-      separatorBuilder: (_, _) => SizedBox(height: 10.h),
+      separatorBuilder: (_, _) => SizedBox(height: 12.h),
       itemBuilder: (_, i) {
-        final deal = pendingDeals[i];
-        return _HireCard(deal: deal, uid: uid);
+        return _HireCard(deal: pendingDeals[i], uid: uid)
+            .animate()
+            .fadeIn(duration: 350.ms, delay: (i * 60).ms)
+            .slideX(
+                begin: 0.04,
+                end: 0,
+                duration: 350.ms,
+                delay: (i * 60).ms);
       },
     );
   }
@@ -559,18 +769,18 @@ class _HireCard extends ConsumerWidget {
     final fmt = DateFormat('MMM d, y');
 
     return Container(
-      padding: EdgeInsets.all(16.w),
+      padding: EdgeInsets.all(18.w),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16.r),
+        borderRadius: BorderRadius.circular(20.r),
         border: Border.all(
-            color: const Color(0xFF0D9488).withValues(alpha: 0.2)),
+            color: const Color(0xFF0D9488).withValues(alpha: 0.18)),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF0D9488).withValues(alpha: 0.06),
-            blurRadius: 12,
-            offset: const Offset(0, 3),
-          )
+            color: const Color(0xFF0D9488).withValues(alpha: 0.07),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
         ],
       ),
       child: Column(
@@ -579,12 +789,22 @@ class _HireCard extends ConsumerWidget {
           Row(
             children: [
               Container(
-                height: 44.w,
-                width: 44.w,
+                height: 52.w,
+                width: 52.w,
                 decoration: BoxDecoration(
-                  color:
-                      const Color(0xFF0D9488).withValues(alpha: 0.1),
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF0D9488), Color(0xFF0F766E)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
                   shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF0D9488).withValues(alpha: 0.28),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
                 child: Center(
                   child: Text(
@@ -592,42 +812,56 @@ class _HireCard extends ConsumerWidget {
                         ? deal.patientName[0].toUpperCase()
                         : '?',
                     style: GoogleFonts.poppins(
-                      fontSize: 18.sp,
+                      fontSize: 20.sp,
                       fontWeight: FontWeight.w700,
-                      color: const Color(0xFF0D9488),
+                      color: Colors.white,
                     ),
                   ),
                 ),
               ),
-              SizedBox(width: 12.w),
+              SizedBox(width: 14.w),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(deal.patientName,
-                        style: GoogleFonts.poppins(
-                          fontSize: 14.sp,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF0F172A),
-                        )),
-                    Text('From ${deal.managerName}',
-                        style: GoogleFonts.inter(
-                          fontSize: 12.sp,
-                          color: const Color(0xFF64748B),
-                        )),
+                    Text(
+                      deal.patientName,
+                      style: GoogleFonts.poppins(
+                        fontSize: 15.sp,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                    SizedBox(height: 3.h),
+                    Text(
+                      'Requested by ${deal.managerName}',
+                      style: GoogleFonts.inter(
+                        fontSize: 12.sp,
+                        color: const Color(0xFF64748B),
+                      ),
+                    ),
                   ],
                 ),
               ),
-              Text(
-                fmt.format(deal.createdAt),
-                style: GoogleFonts.inter(
-                  fontSize: 10.sp,
-                  color: const Color(0xFF94A3B8),
+              Container(
+                padding:
+                    EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0D9488).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8.r),
+                ),
+                child: Text(
+                  fmt.format(deal.createdAt),
+                  style: GoogleFonts.inter(
+                    fontSize: 10.sp,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF0D9488),
+                  ),
                 ),
               ),
             ],
           ),
-          SizedBox(height: 14.h),
+          SizedBox(height: 16.h),
           Row(
             children: [
               Expanded(
@@ -643,8 +877,7 @@ class _HireCard extends ConsumerWidget {
                           SnackBar(
                             content: Text(
                                 'Connected to ${deal.patientName}!'),
-                            backgroundColor:
-                                const Color(0xFF16A34A),
+                            backgroundColor: const Color(0xFF16A34A),
                           ),
                         );
                       }
@@ -652,57 +885,64 @@ class _HireCard extends ConsumerWidget {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content:
-                                Text('Error: ${e.toString()}'),
-                            backgroundColor:
-                                const Color(0xFFEF4444),
+                            content: Text('Error: ${e.toString()}'),
+                            backgroundColor: const Color(0xFFEF4444),
                           ),
                         );
                       }
                     }
                   },
                   child: Container(
-                    height: 40.h,
+                    height: 46.h,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF0D9488),
-                      borderRadius: BorderRadius.circular(10.r),
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF0D9488), Color(0xFF0F766E)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12.r),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF0D9488)
+                              .withValues(alpha: 0.3),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
                     child: Center(
-                      child: Text('Accept',
-                          style: GoogleFonts.inter(
-                              fontSize: 13.sp,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white)),
+                      child: Text(
+                        'Accept Request',
+                        style: GoogleFonts.inter(
+                          fontSize: 13.sp,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
               SizedBox(width: 10.w),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () {
-                    HapticFeedback.lightImpact();
-                    ref
-                        .read(caregiverRepositoryProvider)
-                        .rejectDeal(uid, deal.id ?? '');
-                  },
-                  child: Container(
-                    height: 40.h,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFEF2F2),
-                      borderRadius: BorderRadius.circular(10.r),
-                      border: Border.all(
-                          color: const Color(0xFFEF4444)
-                              .withValues(alpha: 0.3)),
-                    ),
-                    child: Center(
-                      child: Text('Decline',
-                          style: GoogleFonts.inter(
-                              fontSize: 13.sp,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFFEF4444))),
-                    ),
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  ref
+                      .read(caregiverRepositoryProvider)
+                      .rejectDeal(uid, deal.id ?? '');
+                },
+                child: Container(
+                  height: 46.h,
+                  width: 46.h,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF2F2),
+                    borderRadius: BorderRadius.circular(12.r),
+                    border: Border.all(
+                        color: const Color(0xFFEF4444)
+                            .withValues(alpha: 0.25)),
                   ),
+                  child: Icon(Icons.close_rounded,
+                      size: 20.w, color: const Color(0xFFEF4444)),
                 ),
               ),
             ],
@@ -737,36 +977,39 @@ class _EmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              height: 72.w,
-              width: 72.w,
+              height: 80.w,
+              width: 80.w,
               decoration: BoxDecoration(
                 color: iconColor.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, size: 36.w, color: iconColor),
+              child: Icon(icon, size: 40.w, color: iconColor),
             ),
-            SizedBox(height: 16.h),
+            SizedBox(height: 18.h),
             Text(
               title,
               style: GoogleFonts.poppins(
-                fontSize: 16.sp,
+                fontSize: 17.sp,
                 fontWeight: FontWeight.w700,
                 color: const Color(0xFF0F172A),
               ),
             ),
-            SizedBox(height: 6.h),
+            SizedBox(height: 8.h),
             Text(
               subtitle,
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(
                 fontSize: 13.sp,
                 color: const Color(0xFF94A3B8),
-                height: 1.5,
+                height: 1.6,
               ),
             ),
           ],
         ),
       ),
-    );
+    )
+        .animate()
+        .fadeIn(duration: 400.ms)
+        .scale(begin: const Offset(0.92, 0.92), duration: 400.ms);
   }
 }

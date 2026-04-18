@@ -36,8 +36,8 @@ class CaregiverRepository {
         .update({'isAvailableForHire': isAvailable});
   }
 
-  /// Sync a Pro Caregiver profile to the root-level discovery_hub collection
-  /// so patients can find them via the Discovery Hub.
+  /// Sync a Pro Caregiver profile to the root-level pro_caregivers collection
+  /// so patients/managers can find them in the Discovery Hub.
   /// Family members must never call this.
   Future<void> syncToDiscoveryHub(CaregiverProfileModel profile) async {
     await _db.collection('pro_caregivers').doc(profile.uid).set({
@@ -48,7 +48,15 @@ class CaregiverRepository {
       'yearsOfExperience': profile.yearsOfExperience,
       'hourlyRate': profile.hourlyRate,
       'dailyRate': profile.dailyRate,
+      'monthlyRate': profile.monthlyRate,
       'specializations': profile.specializations,
+      'languages': profile.languages,
+      'workHistory': profile.workHistory.map((w) => w.toMap()).toList(),
+      'availability': profile.availability.firestoreValue,
+      'certifications': profile.certifications.map((c) => c.toMap()).toList(),
+      if (profile.licenseNumber != null &&
+          profile.licenseNumber!.isNotEmpty)
+        'licenseNumber': profile.licenseNumber,
       'isVerified': profile.isVerified,
       'isAvailableForHire': profile.isAvailableForHire,
       'updatedAt': FieldValue.serverTimestamp(),

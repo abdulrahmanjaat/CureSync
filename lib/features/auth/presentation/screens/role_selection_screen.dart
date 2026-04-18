@@ -66,10 +66,20 @@ const _nodes = [
     color: Color(0xFFDB2777),
   ),
   _Node(
+    id: 'doctor',
+    label: 'Doctor',
+    icon: Icons.medical_services_rounded,
+    description:
+        'Manage patient appointments, write prescriptions and monitor treatment progress.',
+    role: UserRole.doctor,
+    color: Color(0xFF4338CA),
+  ),
+  _Node(
     id: 'pharmacy',
     label: 'Pharmacy',
-    icon: Icons.medication_outlined,
-    description: 'Process prescriptions and manage medication stock.',
+    icon: Icons.local_pharmacy_rounded,
+    description: 'Process prescriptions, manage medication inventory and track dispensing.',
+    role: UserRole.pharmacy,
     color: Color(0xFFEA580C),
   ),
 ];

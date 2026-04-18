@@ -12,27 +12,24 @@ import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../patient/presentation/providers/patient_provider.dart';
 import '../../../patient/presentation/providers/medication_provider.dart';
 import '../../../patient/presentation/widgets/add_patient_sheet.dart';
+import 'manager_notifications_screen.dart';
 
-// Colorful card palette — cycles per index
-const _cardColors = [
-  Color(0xFFDB2777), // Pink/Rose — Manager brand
-  Color(0xFF0891B2), // Cyan
-  Color(0xFF7C3AED), // Purple
-  Color(0xFF16A34A), // Green
-  Color(0xFFF59E0B), // Amber
-  Color(0xFF0D9488), // Teal
+// ── Brand palette ─────────────────────────────────────────────────────────────
+const Color _rose  = Color(0xFFDB2777);
+const Color _roseD = Color(0xFF9D174D);
+const Color _bg    = Color(0xFFF9F5F7);
+
+// Per-patient avatar gradient palette (cycles by list index)
+const List<List<Color>> _gradients = [
+  [Color(0xFFDB2777), Color(0xFF9D174D)],
+  [Color(0xFF0891B2), Color(0xFF0E7490)],
+  [Color(0xFF7C3AED), Color(0xFF5B21B6)],
+  [Color(0xFF16A34A), Color(0xFF15803D)],
+  [Color(0xFFF59E0B), Color(0xFFD97706)],
+  [Color(0xFF0D9488), Color(0xFF0F766E)],
 ];
 
-const _cardBgColors = [
-  Color(0xFFFFE4E6),
-  Color(0xFFE0F2FE),
-  Color(0xFFEDE9FE),
-  Color(0xFFDCFCE7),
-  Color(0xFFFEF3C7),
-  Color(0xFFCCFBF1),
-];
-
-const _relationEmojis = {
+const Map<String, String> _relationEmojis = {
   'Father': '👨', 'Mother': '👩', 'Son': '👦', 'Daughter': '👧',
   'Brother': '🧑', 'Sister': '👱', 'Grandparent': '🧓',
   'Grandfather': '👴', 'Grandmother': '👵', 'Spouse': '💑',
@@ -40,266 +37,508 @@ const _relationEmojis = {
   'Friend': '🤝', 'Myself': '🧑',
 };
 
-// ═══════════════════════════════════════════════════════════════════
+// ── Helpers ───────────────────────────────────────────────────────────────────
+Color _adherenceColor(double pct) {
+  if (pct >= 80) return const Color(0xFF16A34A);
+  if (pct >= 50) return const Color(0xFFF59E0B);
+  return const Color(0xFFEF4444);
+}
+
+String _greetingText() {
+  final h = DateTime.now().hour;
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Main screen
+// ════════════════════════════════════════════════════════════════════════════
 class ManagerDashboardScreen extends ConsumerWidget {
   const ManagerDashboardScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final patientsAsync = ref.watch(patientsStreamProvider);
-    final authUser = ref.watch(authStateProvider).valueOrNull;
-    final firstName = (authUser?.displayName ?? 'Manager').split(' ').first;
-    final photoUrl = authUser?.photoURL;
+    final authUser     = ref.watch(authStateProvider).valueOrNull;
+    final firstName    = (authUser?.displayName ?? 'Manager').split(' ').first;
+    final photoUrl     = authUser?.photoURL;
+
+    final patients = patientsAsync.valueOrNull ?? [];
+    final sosCount = patients.where((p) => p.isSosActive).length;
+
+    // Aggregate today's adherence across all managed patients
+    int totalTaken = 0, totalDoses = 0;
+    for (final p in patients) {
+      final adh = ref.watch(todayAdherenceProvider(p.patientId ?? ''));
+      totalTaken += adh.taken;
+      totalDoses += adh.total;
+    }
+
+    final adherenceText = !patientsAsync.hasValue
+        ? '–'
+        : totalDoses == 0
+            ? '–'
+            : '${totalTaken * 100 ~/ totalDoses}%';
+
+    // Missed-dose badge: count across all managed patients
+    final missedCount = ref
+        .watch(managerAlertsProvider)
+        .where((a) => a.type == ManagerAlertType.missedMed)
+        .length;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FBFA),
-      // ── FAB: Add Patient ── (moved from App Bar header)
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          HapticFeedback.lightImpact();
-          CustomBottomSheet.show(
-            context: context,
-            useDraggable: false,
-            child: const AddPatientSheet(),
-          );
-        },
-        backgroundColor: const Color(0xFFDB2777),
-        foregroundColor: Colors.white,
-        elevation: 6,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18.r),
-        ),
-        child: Icon(Icons.person_add_rounded, size: 24.w),
-      ),
-      body: Stack(
-        children: [
-          // Ambient background glow — rose/pink for manager brand
-          Positioned(
-            top: -60.h,
-            right: -40.w,
-            child: Container(
-              height: 260.w,
-              width: 260.w,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    const Color(0xFFDB2777).withValues(alpha: 0.07),
-                    Colors.transparent,
+      backgroundColor: _bg,
+      body: CustomScrollView(
+        slivers: [
+          // ── Gradient header ───────────────────────────────────────────────
+          SliverToBoxAdapter(
+            child: _DashboardHeader(
+              firstName: firstName,
+              photoUrl: photoUrl,
+              patientCount: patients.length,
+              adherenceText: adherenceText,
+              sosCount: sosCount,
+              patientsLoaded: patientsAsync.hasValue,
+              missedCount: missedCount,
+              onBell: () {
+                HapticFeedback.lightImpact();
+                context.push('/manager/notifications');
+              },
+              onProfile: () {
+                HapticFeedback.lightImpact();
+                context.push('/profile');
+              },
+            ),
+          ),
+
+          // ── Section label ─────────────────────────────────────────────────
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(20.w, 24.h, 20.w, 12.h),
+              child: Row(
+                children: [
+                  Text(
+                    'Patients',
+                    style: GoogleFonts.poppins(
+                      fontSize: 18.sp,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF0F172A),
+                    ),
+                  ),
+                  SizedBox(width: 8.w),
+                  if (patients.isNotEmpty)
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: 8.w, vertical: 2.h),
+                      decoration: BoxDecoration(
+                        color: _rose.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(20.r),
+                      ),
+                      child: Text(
+                        '${patients.length}',
+                        style: GoogleFonts.inter(
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w700,
+                          color: _rose,
+                        ),
+                      ),
+                    ),
+                  if (sosCount > 0) ...[
+                    const Spacer(),
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: 10.w, vertical: 4.h),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEF4444).withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(20.r),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.warning_rounded,
+                              size: 12.w,
+                              color: const Color(0xFFEF4444)),
+                          SizedBox(width: 4.w),
+                          Text(
+                            '$sosCount SOS',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.sp,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFFEF4444),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
-                ),
+                ],
               ),
             ),
           ),
 
-          SafeArea(
-            child: CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(
+          // ── Patient list ──────────────────────────────────────────────────
+          SliverPadding(
+            padding: EdgeInsets.symmetric(horizontal: 20.w),
+            sliver: patientsAsync.when(
+              loading: () =>
+                  const SliverToBoxAdapter(child: _LoadingState()),
+              error: (e, _) => SliverToBoxAdapter(
+                child: Center(
                   child: Padding(
-                    padding: EdgeInsets.fromLTRB(20.w, 16.h, 20.w, 0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // ─── App Bar Row ───────────────────────────────────
-                        // Left: Manager greeting
-                        // Right: Notification bell + Profile avatar
-                        // Both link to the Manager's own auth data — NOT sub-patients
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Welcome back,',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 13.sp,
-                                    color: const Color(0xFF94A3B8),
-                                  ),
-                                ),
-                                Text(
-                                  '$firstName 👋',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 26.sp,
-                                    fontWeight: FontWeight.w800,
-                                    color: const Color(0xFF0F172A),
-                                  ),
-                                ),
-                                Text(
-                                  'Managed Patients',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 13.sp,
-                                    color: const Color(0xFF94A3B8),
-                                  ),
-                                ),
-                              ],
-                            ),
-
-                            // Notification + Profile — Manager's own
-                            Row(
-                              children: [
-                                _AppBarIcon(
-                                  icon: Icons.notifications_none_rounded,
-                                  onTap: () {
-                                    HapticFeedback.lightImpact();
-                                    context.push('/notifications');
-                                  },
-                                ),
-                                SizedBox(width: 8.w),
-                                GestureDetector(
-                                  onTap: () {
-                                    HapticFeedback.lightImpact();
-                                    context.push('/profile');
-                                  },
-                                  child: Container(
-                                    height: 42.w,
-                                    width: 42.w,
-                                    decoration: BoxDecoration(
-                                      borderRadius:
-                                          BorderRadius.circular(14.r),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black
-                                              .withValues(alpha: 0.06),
-                                          blurRadius: 8,
-                                          offset: const Offset(0, 2),
-                                        ),
-                                      ],
-                                    ),
-                                    child: ClipRRect(
-                                      borderRadius:
-                                          BorderRadius.circular(14.r),
-                                      child: photoUrl != null
-                                          ? Image.network(
-                                              photoUrl,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (_, _, _) =>
-                                                  _avatarFallback(firstName),
-                                            )
-                                          : _avatarFallback(firstName),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ).animate().fadeIn(duration: 350.ms),
-
-                        SizedBox(height: 16.h),
-
-                        // ─── Stats row ───
-                        patientsAsync.whenData((patients) {
-                          return Row(
-                            children: [
-                              _StatPill(
-                                icon: Icons.manage_accounts_rounded,
-                                label:
-                                    '${patients.length} patient${patients.length == 1 ? '' : 's'}',
-                                color: const Color(0xFFDB2777),
-                              ),
-                              SizedBox(width: 8.w),
-                              _StatPill(
-                                icon: Icons.verified_rounded,
-                                label: 'Active management',
-                                color: const Color(0xFF0891B2),
-                              ),
-                            ],
-                          );
-                        }).valueOrNull ??
-                            const SizedBox.shrink(),
-
-                        SizedBox(height: 20.h),
-                      ],
+                    padding: EdgeInsets.only(top: 40.h),
+                    child: Text(
+                      'Error loading patients',
+                      style: GoogleFonts.inter(
+                          fontSize: 14.sp,
+                          color: const Color(0xFF94A3B8)),
                     ),
                   ),
                 ),
-
-                // ─── Patient Cards ─────────────────────────────────────────
-                SliverPadding(
-                  padding: EdgeInsets.symmetric(horizontal: 20.w),
-                  sliver: patientsAsync.when(
-                    loading: () => SliverToBoxAdapter(
-                      child: Center(
-                        child: Padding(
-                          padding: EdgeInsets.only(top: 60.h),
-                          child: const CircularProgressIndicator(
-                            color: Color(0xFFDB2777),
-                            strokeWidth: 2,
-                          ),
-                        ),
+              ),
+              data: (list) {
+                if (list.isEmpty) {
+                  return SliverToBoxAdapter(
+                    child: _EmptyState(
+                      onAdd: () => CustomBottomSheet.show(
+                        context: context,
+                        useDraggable: false,
+                        child: const AddPatientSheet(),
                       ),
                     ),
-                    error: (e, _) => SliverToBoxAdapter(
-                      child: Center(
-                        child: Text('Error: $e',
-                            style: GoogleFonts.inter(
-                                fontSize: 14.sp,
-                                color: const Color(0xFF94A3B8))),
-                      ),
-                    ),
-                    data: (patients) {
-                      if (patients.isEmpty) {
-                        return SliverToBoxAdapter(
-                          child: _EmptyState(
-                            onAdd: () => CustomBottomSheet.show(
-                              context: context,
-                              useDraggable: false,
-                              child: const AddPatientSheet(),
-                            ),
-                          ),
-                        );
-                      }
-                      return SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (ctx, i) {
-                            final p = patients[i];
-                            final colorIdx = i % _cardColors.length;
-                            return Padding(
-                              padding: EdgeInsets.only(bottom: 16.h),
-                              child: _ManagerPatientCard(
-                                patient: p,
-                                color: _cardColors[colorIdx],
-                                bgColor: _cardBgColors[colorIdx],
-                                onViewDashboard: () {
-                                  HapticFeedback.lightImpact();
-                                  context.push(
-                                      '/manager/patient/${p.patientId}');
-                                },
-                              )
-                                  .animate()
-                                  .fadeIn(
-                                      duration: 400.ms,
-                                      delay: (80 * i).ms)
-                                  .slideY(
-                                      begin: 0.06,
-                                      end: 0,
-                                      duration: 400.ms,
-                                      delay: (80 * i).ms),
-                            );
+                  );
+                }
+                return SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (ctx, i) {
+                      final p = list[i];
+                      return Padding(
+                        padding: EdgeInsets.only(bottom: 16.h),
+                        child: _PatientCard(
+                          patient: p,
+                          colorIdx: i % _gradients.length,
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            context.push(
+                                '/manager/patient/${p.patientId}');
                           },
-                          childCount: patients.length,
-                        ),
+                        )
+                            .animate()
+                            .fadeIn(
+                                duration: 400.ms,
+                                delay: (80 * i).ms)
+                            .slideY(
+                                begin: 0.05,
+                                end: 0,
+                                duration: 400.ms,
+                                delay: (80 * i).ms),
                       );
                     },
+                    childCount: list.length,
                   ),
-                ),
-
-                SliverToBoxAdapter(child: SizedBox(height: 120.h)),
-              ],
+                );
+              },
             ),
           ),
+
+          SliverToBoxAdapter(child: SizedBox(height: 120.h)),
         ],
       ),
     );
   }
+}
 
-  Widget _avatarFallback(String name) {
+// ════════════════════════════════════════════════════════════════════════════
+// Gradient header
+// ════════════════════════════════════════════════════════════════════════════
+class _DashboardHeader extends StatelessWidget {
+  final String firstName;
+  final String? photoUrl;
+  final int patientCount;
+  final String adherenceText;
+  final int sosCount;
+  final int missedCount;
+  final bool patientsLoaded;
+  final VoidCallback onBell;
+  final VoidCallback onProfile;
+
+  const _DashboardHeader({
+    required this.firstName,
+    required this.photoUrl,
+    required this.patientCount,
+    required this.adherenceText,
+    required this.sosCount,
+    required this.missedCount,
+    required this.patientsLoaded,
+    required this.onBell,
+    required this.onProfile,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFFDB2777),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFFE8356D), _roseD],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Stack(
+        children: [
+          // Decorative ambient blobs
+          Positioned(
+            top: -30.h,
+            right: -40.w,
+            child: Container(
+              height: 190.w,
+              width: 190.w,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.07),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 55.h,
+            right: 25.w,
+            child: Container(
+              height: 80.w,
+              width: 80.w,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.05),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 28.h,
+            left: -20.w,
+            child: Container(
+              height: 100.w,
+              width: 100.w,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.04),
+              ),
+            ),
+          ),
+
+          // Content
+          SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(20.w, 16.h, 20.w, 24.h),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── App bar row ────────────────────────────────────────
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _greetingText(),
+                            style: GoogleFonts.inter(
+                              fontSize: 13.sp,
+                              color:
+                                  Colors.white.withValues(alpha: 0.75),
+                            ),
+                          ),
+                          Text(
+                            '$firstName 👋',
+                            style: GoogleFonts.poppins(
+                              fontSize: 26.sp,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          // Bell with missed-dose badge
+                          GestureDetector(
+                            onTap: onBell,
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Container(
+                                  height: 42.w,
+                                  width: 42.w,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white
+                                        .withValues(alpha: 0.15),
+                                    borderRadius:
+                                        BorderRadius.circular(14.r),
+                                    border: Border.all(
+                                      color: Colors.white
+                                          .withValues(alpha: 0.25),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Icon(
+                                    missedCount > 0
+                                        ? Icons.notifications_active_rounded
+                                        : Icons.notifications_none_rounded,
+                                    size: 22.w,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                if (missedCount > 0)
+                                  Positioned(
+                                    top: -4.h,
+                                    right: -4.w,
+                                    child: Container(
+                                      constraints: BoxConstraints(
+                                          minWidth: 18.w, minHeight: 18.w),
+                                      padding: EdgeInsets.symmetric(
+                                          horizontal: 4.w),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFEF4444),
+                                        borderRadius:
+                                            BorderRadius.circular(10.r),
+                                        border: Border.all(
+                                            color: _roseD, width: 1.5),
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          missedCount > 99
+                                              ? '99+'
+                                              : '$missedCount',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 9.sp,
+                                            fontWeight: FontWeight.w800,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(width: 8.w),
+                          // Profile avatar
+                          GestureDetector(
+                            onTap: onProfile,
+                            child: Container(
+                              height: 42.w,
+                              width: 42.w,
+                              decoration: BoxDecoration(
+                                borderRadius:
+                                    BorderRadius.circular(14.r),
+                                border: Border.all(
+                                  color: Colors.white
+                                      .withValues(alpha: 0.45),
+                                  width: 2,
+                                ),
+                              ),
+                              child: ClipRRect(
+                                borderRadius:
+                                    BorderRadius.circular(12.r),
+                                child: photoUrl != null
+                                    ? Image.network(
+                                        photoUrl!,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, e, st) =>
+                                            _avatarFallback(),
+                                      )
+                                    : _avatarFallback(),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+
+                  SizedBox(height: 8.h),
+
+                  // Subtitle role pill
+                  Container(
+                    padding: EdgeInsets.symmetric(
+                        horizontal: 10.w, vertical: 5.h),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20.r),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.manage_accounts_rounded,
+                          size: 12.w,
+                          color: Colors.white.withValues(alpha: 0.9),
+                        ),
+                        SizedBox(width: 5.w),
+                        Text(
+                          patientsLoaded
+                              ? 'Managing $patientCount patient${patientCount == 1 ? '' : 's'}'
+                              : 'Care Manager',
+                          style: GoogleFonts.inter(
+                            fontSize: 12.sp,
+                            color:
+                                Colors.white.withValues(alpha: 0.9),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  SizedBox(height: 22.h),
+
+                  // ── Stats strip ────────────────────────────────────────
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _HeaderStat(
+                          icon: Icons.people_rounded,
+                          value: patientsLoaded
+                              ? '$patientCount'
+                              : '–',
+                          label: 'Patients',
+                        ),
+                      ),
+                      SizedBox(width: 10.w),
+                      Expanded(
+                        child: _HeaderStat(
+                          icon: Icons.donut_large_rounded,
+                          value: adherenceText,
+                          label: 'Adherence',
+                        ),
+                      ),
+                      SizedBox(width: 10.w),
+                      Expanded(
+                        child: _HeaderStat(
+                          icon: sosCount > 0
+                              ? Icons.warning_rounded
+                              : Icons.check_circle_rounded,
+                          value:
+                              patientsLoaded ? '$sosCount' : '–',
+                          label: 'SOS',
+                          isAlert: sosCount > 0,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    ).animate().fadeIn(duration: 350.ms);
+  }
+
+  Widget _avatarFallback() {
+    return Container(
+      color: Colors.white.withValues(alpha: 0.2),
       child: Center(
         child: Text(
-          name.isNotEmpty ? name[0].toUpperCase() : 'M',
+          firstName.isNotEmpty ? firstName[0].toUpperCase() : 'M',
           style: GoogleFonts.poppins(
             fontSize: 16.sp,
             fontWeight: FontWeight.w700,
@@ -311,234 +550,440 @@ class ManagerDashboardScreen extends ConsumerWidget {
   }
 }
 
-// ─── Manager Patient Card ────────────────────────────────────────────────────
-
-class _ManagerPatientCard extends ConsumerWidget {
-  final PatientModel patient;
-  final Color color;
-  final Color bgColor;
-  final VoidCallback onViewDashboard;
-
-  const _ManagerPatientCard({
-    required this.patient,
-    required this.color,
-    required this.bgColor,
-    required this.onViewDashboard,
-  });
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final medsAsync =
-        ref.watch(medicationsStreamProvider(patient.patientId ?? ''));
-    final meds = medsAsync.valueOrNull ?? [];
-    final activeMeds = meds.where((m) => m.isActive && !m.isExpired).toList();
-    final emoji = _relationEmojis[patient.relation] ?? '🧑';
-
-    return GestureDetector(
-      onTap: onViewDashboard,
-      child: Container(
-        padding: EdgeInsets.all(18.w),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(24.r),
-          border: Border.all(
-            color: color.withValues(alpha: 0.15),
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: 0.12),
-              blurRadius: 20,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ─── Top row: emoji avatar + name/relation + open arrow ───
-            Row(
-              children: [
-                Container(
-                  height: 52.w,
-                  width: 52.w,
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(16.r),
-                  ),
-                  child: Center(
-                    child:
-                        Text(emoji, style: TextStyle(fontSize: 26.sp)),
-                  ),
-                ),
-                SizedBox(width: 14.w),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        patient.name,
-                        style: GoogleFonts.poppins(
-                          fontSize: 17.sp,
-                          fontWeight: FontWeight.w800,
-                          color: const Color(0xFF0F172A),
-                        ),
-                      ),
-                      Text(
-                        '${patient.relation} · ${patient.age} yrs',
-                        style: GoogleFonts.inter(
-                          fontSize: 12.sp,
-                          color: const Color(0xFF64748B),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  height: 36.w,
-                  width: 36.w,
-                  decoration: BoxDecoration(
-                    color: color,
-                    borderRadius: BorderRadius.circular(12.r),
-                    boxShadow: [
-                      BoxShadow(
-                        color: color.withValues(alpha: 0.35),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Icon(Icons.arrow_forward_rounded,
-                      size: 18.w, color: Colors.white),
-                ),
-              ],
-            ),
-
-            SizedBox(height: 14.h),
-
-            // ─── Access Code chip + stats row ───
-            Row(
-              children: [
-                // Access code — tappable, copies to clipboard
-                GestureDetector(
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    Clipboard.setData(
-                        ClipboardData(text: patient.accessCode));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Code copied to clipboard',
-                          style: GoogleFonts.inter(color: Colors.white),
-                        ),
-                        backgroundColor: const Color(0xFF0D9488),
-                        behavior: SnackBarBehavior.floating,
-                        duration: const Duration(seconds: 2),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12.r)),
-                      ),
-                    );
-                  },
-                  child: Container(
-                    padding: EdgeInsets.symmetric(
-                        horizontal: 10.w, vertical: 6.h),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10.r),
-                      border: Border.all(
-                          color: color.withValues(alpha: 0.25), width: 1),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.key_rounded, size: 12.w, color: color),
-                        SizedBox(width: 5.w),
-                        Text(
-                          patient.accessCode,
-                          style: GoogleFonts.poppins(
-                            fontSize: 12.sp,
-                            fontWeight: FontWeight.w700,
-                            color: color,
-                            letterSpacing: 1.5,
-                          ),
-                        ),
-                        SizedBox(width: 5.w),
-                        Icon(Icons.copy_rounded,
-                            size: 10.w,
-                            color: color.withValues(alpha: 0.6)),
-                      ],
-                    ),
-                  ),
-                ),
-
-                SizedBox(width: 8.w),
-
-                _Chip(
-                  icon: Icons.medication_rounded,
-                  label:
-                      '${activeMeds.length} med${activeMeds.length == 1 ? '' : 's'}',
-                  color: color,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Small helpers ────────────────────────────────────────────────────────────
-
-class _AppBarIcon extends StatelessWidget {
+// ── Frosted glass stat bubble ─────────────────────────────────────────────────
+class _HeaderStat extends StatelessWidget {
   final IconData icon;
-  final VoidCallback onTap;
-
-  const _AppBarIcon({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 42.w,
-        width: 42.w,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14.r),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Icon(icon, size: 22.w, color: const Color(0xFF64748B)),
-      ),
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  final IconData icon;
+  final String value;
   final String label;
-  final Color color;
+  final bool isAlert;
 
-  const _Chip({required this.icon, required this.label, required this.color});
+  const _HeaderStat({
+    required this.icon,
+    required this.value,
+    required this.label,
+    this.isAlert = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
+      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 11.h),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(10.r),
+        color: isAlert
+            ? const Color(0xFFEF4444).withValues(alpha: 0.25)
+            : Colors.white.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(
+          color: isAlert
+              ? const Color(0xFFEF4444).withValues(alpha: 0.40)
+              : Colors.white.withValues(alpha: 0.25),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon,
+                  size: 12.w,
+                  color: Colors.white.withValues(alpha: 0.8)),
+              SizedBox(width: 4.w),
+              Expanded(
+                child: Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: 10.sp,
+                    color: Colors.white.withValues(alpha: 0.75),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 3.h),
+          Text(
+            value,
+            style: GoogleFonts.poppins(
+              fontSize: 20.sp,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+              height: 1.1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Patient card
+// ════════════════════════════════════════════════════════════════════════════
+class _PatientCard extends ConsumerWidget {
+  final PatientModel patient;
+  final int colorIdx;
+  final VoidCallback onTap;
+
+  const _PatientCard({
+    required this.patient,
+    required this.colorIdx,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final patientId  = patient.patientId ?? '';
+    final adh        = ref.watch(todayAdherenceProvider(patientId));
+    final nextDose   = ref.watch(nextDoseProvider(patientId));
+    final medsAsync  = ref.watch(medicationsStreamProvider(patientId));
+    final activeMeds = (medsAsync.valueOrNull ?? [])
+        .where((m) => m.isActive && !m.isExpired)
+        .length;
+
+    final colors       = _gradients[colorIdx];
+    final primaryColor = colors[0];
+    final emoji        = _relationEmojis[patient.relation] ?? '🧑';
+    final adherencePct =
+        adh.total > 0 ? (adh.taken * 100.0 / adh.total) : 0.0;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22.r),
+          boxShadow: [
+            BoxShadow(
+              color: patient.isSosActive
+                  ? const Color(0xFFEF4444).withValues(alpha: 0.18)
+                  : Colors.black.withValues(alpha: 0.06),
+              blurRadius: 18,
+              offset: const Offset(0, 5),
+              spreadRadius: patient.isSosActive ? 1 : 0,
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(22.r),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // SOS alert banner
+              if (patient.isSosActive)
+                _SosBanner(triggerTime: patient.sosTriggerTime),
+
+              Padding(
+                padding: EdgeInsets.all(18.w),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── Identity row ───────────────────────────────────
+                    Row(
+                      children: [
+                        // Gradient emoji avatar
+                        Container(
+                          height: 56.w,
+                          width: 56.w,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: colors,
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(18.r),
+                            boxShadow: [
+                              BoxShadow(
+                                color: primaryColor
+                                    .withValues(alpha: 0.28),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Center(
+                            child: Text(
+                              emoji,
+                              style: TextStyle(fontSize: 26.sp),
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: 14.w),
+                        // Name + relation
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                patient.name,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 17.sp,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF0F172A),
+                                ),
+                              ),
+                              SizedBox(height: 2.h),
+                              Text(
+                                '${patient.relation} · ${patient.age} yrs',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12.sp,
+                                  color: const Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Arrow CTA
+                        Container(
+                          height: 38.w,
+                          width: 38.w,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: colors,
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(13.r),
+                            boxShadow: [
+                              BoxShadow(
+                                color: primaryColor
+                                    .withValues(alpha: 0.35),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            Icons.arrow_forward_rounded,
+                            size: 18.w,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    SizedBox(height: 18.h),
+
+                    // ── Adherence bar ──────────────────────────────────
+                    Row(
+                      mainAxisAlignment:
+                          MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          "Today's Adherence",
+                          style: GoogleFonts.inter(
+                            fontSize: 11.sp,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF94A3B8),
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                        Text(
+                          adh.total == 0
+                              ? 'No schedule'
+                              : '${adh.taken}/${adh.total} doses · ${adherencePct.round()}%',
+                          style: GoogleFonts.inter(
+                            fontSize: 11.sp,
+                            fontWeight: FontWeight.w600,
+                            color: adh.total == 0
+                                ? const Color(0xFFCBD5E1)
+                                : _adherenceColor(adherencePct),
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 6.h),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6.r),
+                      child: LinearProgressIndicator(
+                        value: adh.total == 0
+                            ? 0
+                            : adherencePct / 100,
+                        minHeight: 8.h,
+                        backgroundColor: const Color(0xFFF1F5F9),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          adh.total == 0
+                              ? const Color(0xFFE2E8F0)
+                              : _adherenceColor(adherencePct),
+                        ),
+                      ),
+                    ),
+
+                    SizedBox(height: 14.h),
+
+                    // ── Chips row ──────────────────────────────────────
+                    Row(
+                      children: [
+                        _CardChip(
+                          icon: Icons.medication_rounded,
+                          label:
+                              '$activeMeds med${activeMeds == 1 ? '' : 's'}',
+                          color: primaryColor,
+                        ),
+                        if (nextDose != null) ...[
+                          SizedBox(width: 6.w),
+                          _CardChip(
+                            icon: Icons.schedule_rounded,
+                            label: nextDose.time,
+                            color: const Color(0xFF0891B2),
+                          ),
+                        ],
+                        const Spacer(),
+                        // Tappable access code
+                        GestureDetector(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            Clipboard.setData(ClipboardData(
+                                text: patient.accessCode));
+                            ScaffoldMessenger.of(context)
+                                .showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Code copied',
+                                  style: GoogleFonts.inter(
+                                      color: Colors.white),
+                                ),
+                                backgroundColor:
+                                    const Color(0xFF0D9488),
+                                behavior: SnackBarBehavior.floating,
+                                duration:
+                                    const Duration(seconds: 2),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(10.r)),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 8.w, vertical: 5.h),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius:
+                                  BorderRadius.circular(8.r),
+                              border: Border.all(
+                                  color: const Color(0xFFE2E8F0),
+                                  width: 1),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.key_rounded,
+                                    size: 10.w,
+                                    color:
+                                        const Color(0xFF94A3B8)),
+                                SizedBox(width: 4.w),
+                                Text(
+                                  patient.accessCode,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 11.sp,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF475569),
+                                    letterSpacing: 1.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── SOS alert banner ──────────────────────────────────────────────────────────
+class _SosBanner extends StatelessWidget {
+  final DateTime? triggerTime;
+  const _SosBanner({this.triggerTime});
+
+  @override
+  Widget build(BuildContext context) {
+    String timeAgo = '';
+    if (triggerTime != null) {
+      final diff = DateTime.now().difference(triggerTime!);
+      timeAgo = diff.inMinutes < 60
+          ? '${diff.inMinutes}m ago'
+          : '${diff.inHours}h ago';
+    }
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 9.h),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFFEF4444), Color(0xFFDC2626)],
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.warning_rounded,
+              size: 14.w, color: Colors.white),
+          SizedBox(width: 6.w),
+          Text(
+            timeAgo.isEmpty ? 'SOS ACTIVE' : 'SOS ACTIVE · $timeAgo',
+            style: GoogleFonts.inter(
+              fontSize: 11.sp,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const Spacer(),
+          Container(
+            padding:
+                EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(6.r),
+            ),
+            child: Text(
+              'RESPOND',
+              style: GoogleFonts.inter(
+                fontSize: 9.sp,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ),
+        ],
+      ),
+    )
+        .animate(onPlay: (c) => c.repeat())
+        .shimmer(
+            duration: 1500.ms,
+            color: Colors.white.withValues(alpha: 0.12));
+  }
+}
+
+// ── Card chip ─────────────────────────────────────────────────────────────────
+class _CardChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  const _CardChip(
+      {required this.icon, required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 9.w, vertical: 5.h),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(8.r),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12.w, color: color),
+          Icon(icon, size: 11.w, color: color),
           SizedBox(width: 4.w),
           Text(
             label,
@@ -554,41 +999,35 @@ class _Chip extends StatelessWidget {
   }
 }
 
-class _StatPill extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-
-  const _StatPill(
-      {required this.icon, required this.label, required this.color});
+// ── Shimmer loading skeleton ──────────────────────────────────────────────────
+class _LoadingState extends StatelessWidget {
+  const _LoadingState();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(20.r),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14.w, color: color),
-          SizedBox(width: 5.w),
-          Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 12.sp,
-              fontWeight: FontWeight.w600,
-              color: color,
+    return Column(
+      children: List.generate(
+        3,
+        (i) => Padding(
+          padding: EdgeInsets.only(bottom: 16.h),
+          child: Container(
+            height: 160.h,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22.r),
             ),
-          ),
-        ],
+          )
+              .animate(onPlay: (c) => c.repeat())
+              .shimmer(
+                  duration: 1200.ms,
+                  color: const Color(0xFFF1F5F9)),
+        ),
       ),
     );
   }
 }
 
+// ── Empty state ───────────────────────────────────────────────────────────────
 class _EmptyState extends StatelessWidget {
   final VoidCallback onAdd;
   const _EmptyState({required this.onAdd});
@@ -600,16 +1039,30 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         children: [
           Container(
-            height: 80.w,
-            width: 80.w,
+            height: 90.w,
+            width: 90.w,
             decoration: BoxDecoration(
-              color: const Color(0xFFDB2777).withValues(alpha: 0.08),
+              gradient: const LinearGradient(
+                colors: [Color(0xFFDB2777), Color(0xFF9D174D)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: _rose.withValues(alpha: 0.25),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
             ),
-            child: Icon(Icons.manage_accounts_rounded,
-                size: 40.w, color: const Color(0xFFDB2777)),
+            child: Icon(
+              Icons.people_outline_rounded,
+              size: 44.w,
+              color: Colors.white,
+            ),
           ),
-          SizedBox(height: 20.h),
+          SizedBox(height: 22.h),
           Text(
             'No patients yet',
             style: GoogleFonts.poppins(
@@ -618,9 +1071,9 @@ class _EmptyState extends StatelessWidget {
               color: const Color(0xFF0F172A),
             ),
           ),
-          SizedBox(height: 6.h),
+          SizedBox(height: 8.h),
           Text(
-            'Tap the + button to add your first\npatient and start managing their care.',
+            'Add a patient to start managing\ntheir medications and health.',
             textAlign: TextAlign.center,
             style: GoogleFonts.inter(
               fontSize: 14.sp,
@@ -632,17 +1085,20 @@ class _EmptyState extends StatelessWidget {
           GestureDetector(
             onTap: onAdd,
             child: Container(
-              padding:
-                  EdgeInsets.symmetric(horizontal: 28.w, vertical: 14.h),
+              padding: EdgeInsets.symmetric(
+                  horizontal: 28.w, vertical: 14.h),
               decoration: BoxDecoration(
-                color: const Color(0xFFDB2777),
-                borderRadius: BorderRadius.circular(14.r),
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFDB2777), Color(0xFF9D174D)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16.r),
                 boxShadow: [
                   BoxShadow(
-                    color:
-                        const Color(0xFFDB2777).withValues(alpha: 0.3),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
+                    color: _rose.withValues(alpha: 0.30),
+                    blurRadius: 14,
+                    offset: const Offset(0, 5),
                   ),
                 ],
               ),

@@ -59,7 +59,7 @@ class MedicationModel {
   });
 
   factory MedicationModel.fromFirestore(DocumentSnapshot doc) {
-    final d = doc.data() as Map<String, dynamic>;
+    final d = (doc.data() as Map<String, dynamic>?) ?? {};
     return MedicationModel(
       id: doc.id,
       patientId: d['patientId'] ?? '',

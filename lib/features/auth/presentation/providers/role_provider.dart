@@ -1,22 +1,26 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Hard-separated roles — each maps to a distinct UI and permission set.
-enum UserRole { patient, family, proCaregiver, manager }
+enum UserRole { patient, family, proCaregiver, manager, doctor, pharmacy }
 
 extension UserRoleX on UserRole {
   String get firestoreValue => switch (this) {
-        UserRole.patient => 'patient',
-        UserRole.family => 'family',
+        UserRole.patient      => 'patient',
+        UserRole.family       => 'family',
         UserRole.proCaregiver => 'pro_caregiver',
-        UserRole.manager => 'manager',
+        UserRole.manager      => 'manager',
+        UserRole.doctor       => 'doctor',
+        UserRole.pharmacy     => 'pharmacy',
       };
 
   static UserRole? fromString(String? v) => switch (v) {
-        'patient' => UserRole.patient,
-        'family' => UserRole.family,
+        'patient'       => UserRole.patient,
+        'family'        => UserRole.family,
         'pro_caregiver' => UserRole.proCaregiver,
-        'manager' => UserRole.manager,
-        _ => null,
+        'manager'       => UserRole.manager,
+        'doctor'        => UserRole.doctor,
+        'pharmacy'      => UserRole.pharmacy,
+        _               => null,
       };
 }
 

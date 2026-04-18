@@ -48,39 +48,70 @@ final _proPharmacies = StreamProvider<List<DiscoveryProfile>>((ref) {
       .map((s) => s.docs.map(DiscoveryProfile.fromFirestore).toList());
 });
 
+// ─── Category Enum ────────────────────────────────────────────────────────────
+
+enum _Cat { all, doctors, caregivers, hospitals, pharmacy }
+
+extension _CatX on _Cat {
+  String get label => switch (this) {
+        _Cat.all => 'All',
+        _Cat.doctors => 'Doctors',
+        _Cat.caregivers => 'Caregivers',
+        _Cat.hospitals => 'Hospitals',
+        _Cat.pharmacy => 'Pharmacy',
+      };
+
+  IconData get icon => switch (this) {
+        _Cat.all => Icons.grid_view_rounded,
+        _Cat.doctors => Icons.medical_services_rounded,
+        _Cat.caregivers => Icons.health_and_safety_rounded,
+        _Cat.hospitals => Icons.local_hospital_rounded,
+        _Cat.pharmacy => Icons.local_pharmacy_rounded,
+      };
+
+  Color get color => switch (this) {
+        _Cat.all => const Color(0xFF0D9488),
+        _Cat.doctors => const Color(0xFF0D9488),
+        _Cat.caregivers => const Color(0xFF7C3AED),
+        _Cat.hospitals => const Color(0xFF0891B2),
+        _Cat.pharmacy => const Color(0xFFD97706),
+      };
+
+  List<Color> get gradient => switch (this) {
+        _Cat.all => [const Color(0xFF0D9488), const Color(0xFF065F46)],
+        _Cat.doctors => [const Color(0xFF0D9488), const Color(0xFF065F46)],
+        _Cat.caregivers => [const Color(0xFF7C3AED), const Color(0xFF4C1D95)],
+        _Cat.hospitals => [const Color(0xFF0891B2), const Color(0xFF0E4C7A)],
+        _Cat.pharmacy => [const Color(0xFFD97706), const Color(0xFF92400E)],
+      };
+
+  String get emptyLabel => switch (this) {
+        _Cat.all => 'No professionals found',
+        _Cat.doctors => 'No doctors found',
+        _Cat.caregivers => 'No caregivers found',
+        _Cat.hospitals => 'No hospitals found',
+        _Cat.pharmacy => 'No pharmacies found',
+      };
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 class DiscoveryHubScreen extends ConsumerStatefulWidget {
   const DiscoveryHubScreen({super.key});
 
   @override
-  ConsumerState<DiscoveryHubScreen> createState() => _DiscoveryHubScreenState();
+  ConsumerState<DiscoveryHubScreen> createState() =>
+      _DiscoveryHubScreenState();
 }
 
-class _DiscoveryHubScreenState extends ConsumerState<DiscoveryHubScreen>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
-  final _searchController = TextEditingController();
+class _DiscoveryHubScreenState extends ConsumerState<DiscoveryHubScreen> {
+  final _searchCtrl = TextEditingController();
   String _query = '';
-
-  static const _tabs = [
-    _TabMeta(icon: Icons.medical_services_rounded, label: 'Doctors'),
-    _TabMeta(icon: Icons.health_and_safety_rounded, label: 'Caregivers'),
-    _TabMeta(icon: Icons.local_hospital_rounded, label: 'Hospitals'),
-    _TabMeta(icon: Icons.local_pharmacy_rounded, label: 'Pharmacy'),
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: _tabs.length, vsync: this);
-    _tabController.addListener(() => setState(() {}));
-  }
+  _Cat _selected = _Cat.all;
 
   @override
   void dispose() {
-    _tabController.dispose();
-    _searchController.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -91,332 +122,419 @@ class _DiscoveryHubScreenState extends ConsumerState<DiscoveryHubScreen>
     final hospitals = ref.watch(_proHospitals).valueOrNull ?? [];
     final pharmacies = ref.watch(_proPharmacies).valueOrNull ?? [];
 
+    final List<({DiscoveryProfile profile, _Cat cat})> allTagged = [
+      ...doctors.map((p) => (profile: p, cat: _Cat.doctors)),
+      ...caregivers.map((p) => (profile: p, cat: _Cat.caregivers)),
+      ...hospitals.map((p) => (profile: p, cat: _Cat.hospitals)),
+      ...pharmacies.map((p) => (profile: p, cat: _Cat.pharmacy)),
+    ];
+
+    final visibleTagged = allTagged.where((e) {
+      final matchesCat =
+          _selected == _Cat.all || e.cat == _selected;
+      if (!matchesCat) return false;
+      if (_query.isEmpty) return true;
+      final q = _query.toLowerCase();
+      return e.profile.name.toLowerCase().contains(q) ||
+          e.profile.specialty.toLowerCase().contains(q);
+    }).toList();
+
+    final featured = visibleTagged
+        .where((e) => (e.profile.avgRating ?? 0) >= 4.0)
+        .toList();
+
+    final regular = visibleTagged
+        .where((e) => (e.profile.avgRating ?? 0) < 4.0)
+        .toList();
+
+    // Role-aware brand override: manager uses rose instead of teal
+    final userData = ref.watch(currentUserDataProvider).valueOrNull;
+    final isManager = userData?.role == 'manager';
+    const rose   = Color(0xFFDB2777);
+    const roseDk = Color(0xFF9D174D);
+
+    Color accentColor = _selected.color;
+    List<Color> gradientColors = _selected.gradient;
+    Color? allPillOverride;
+
+    if (isManager && _selected == _Cat.all) {
+      accentColor     = rose;
+      gradientColors  = [rose, roseDk];
+      allPillOverride = rose;
+    }
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FBFA),
-      body: SafeArea(
-        child: Column(
-          children: [
-            /// ─── Header ─────────────────────────────────────────────────────
-            Padding(
+      backgroundColor: const Color(0xFFF0F9FF),
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          // ── Hero Header ──────────────────────────────────────────────────
+          SliverToBoxAdapter(
+            child: _HeroHeader(
+              gradientColors: gradientColors,
+              accentColor: accentColor,
+              query: _query,
+              controller: _searchCtrl,
+              onSearchChanged: (v) => setState(() => _query = v.trim()),
+              onClearSearch: () {
+                _searchCtrl.clear();
+                setState(() => _query = '');
+              },
+            ),
+          ),
+
+          // ── Category Pills ───────────────────────────────────────────────
+          SliverToBoxAdapter(
+            child: _CategoryPills(
+              selected: _selected,
+              allPillOverride: allPillOverride,
+              onSelect: (c) {
+                HapticFeedback.selectionClick();
+                setState(() => _selected = c);
+              },
+            ).animate().fadeIn(duration: 300.ms, delay: 50.ms),
+          ),
+
+          SliverToBoxAdapter(child: SizedBox(height: 4.h)),
+
+          // ── Featured / Top Rated ─────────────────────────────────────────
+          if (featured.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: _SectionHeader(
+                icon: Icons.star_rounded,
+                label: 'Top Rated',
+                color: const Color(0xFFF59E0B),
+              ).animate().fadeIn(duration: 280.ms, delay: 80.ms),
+            ),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 190.h,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 8.h),
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: featured.length,
+                  itemBuilder: (ctx, i) {
+                    final e = featured[i];
+                    return _FeaturedCard(
+                      profile: e.profile,
+                      cat: e.cat,
+                      showHire: e.cat == _Cat.caregivers,
+                    )
+                        .animate()
+                        .fadeIn(duration: 280.ms, delay: (i * 60).ms)
+                        .slideX(
+                            begin: 0.08,
+                            end: 0,
+                            duration: 280.ms,
+                            delay: (i * 60).ms);
+                  },
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(child: SizedBox(height: 4.h)),
+          ],
+
+          // ── Verified on CureSync ─────────────────────────────────────────
+          if (regular.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: _SectionHeader(
+                icon: Icons.verified_rounded,
+                label: 'On CureSync',
+                color: accentColor,
+              ).animate().fadeIn(duration: 280.ms, delay: 100.ms),
+            ),
+            SliverPadding(
               padding:
-                  EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Discovery Hub',
-                    style: GoogleFonts.poppins(
-                      fontSize: 26.sp,
-                      fontWeight: FontWeight.w800,
-                      color: const Color(0xFF0F172A),
-                    ),
-                  ),
-                  Text(
-                    'Find doctors, caregivers & more near you',
-                    style: GoogleFonts.inter(
-                      fontSize: 13.sp,
-                      color: const Color(0xFF94A3B8),
-                    ),
-                  ),
-                  SizedBox(height: 12.h),
-                  _SearchBar(
-                    controller: _searchController,
-                    onChanged: (v) => setState(() => _query = v.trim()),
-                  ),
-                ],
-              ),
-            )
-                .animate()
-                .fadeIn(duration: 300.ms)
-                .slideY(begin: -0.05, end: 0, duration: 300.ms),
-
-            /// ─── Custom Tab Bar ──────────────────────────────────────────────
-            Container(
-              margin: EdgeInsets.symmetric(horizontal: 16.w),
-              padding: EdgeInsets.all(4.w),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE2E8F0),
-                borderRadius: BorderRadius.circular(14.r),
-              ),
-              child: Row(
-                children: List.generate(_tabs.length, (i) {
-                  final isActive = _tabController.index == i;
-                  return Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        _tabController.animateTo(i);
-                        setState(() {});
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 220),
-                        curve: Curves.easeOutCubic,
-                        decoration: BoxDecoration(
-                          color: isActive
-                              ? const Color(0xFF0D9488)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(10.r),
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              _tabs[i].icon,
-                              size: 15.w,
-                              color: isActive
-                                  ? Colors.white
-                                  : const Color(0xFF64748B),
-                            ),
-                            SizedBox(height: 2.h),
-                            Text(
-                              _tabs[i].label,
-                              style: GoogleFonts.inter(
-                                fontSize: 10.sp,
-                                fontWeight: isActive
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                                color: isActive
-                                    ? Colors.white
-                                    : const Color(0xFF64748B),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-              ),
-            ).animate().fadeIn(duration: 300.ms, delay: 80.ms),
-
-            SizedBox(height: 12.h),
-
-            /// ─── Tab Content ────────────────────────────────────────────────
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  // Doctors
-                  _HybridTab(
-                    appProfiles: _filter(doctors),
-                    nearMePlaceholder: 'Doctors near you',
-                    emptyMessage: 'No registered doctors found',
-                    emptyIcon: Icons.medical_services_outlined,
-                    accentColor: const Color(0xFF0D9488),
-                    showHire: false,
-                  ),
-
-                  // Caregivers — Pro Caregivers from Firestore
-                  _CaregiverTab(
-                    caregivers: _filter(caregivers),
-                  ),
-
-                  // Hospitals
-                  _HybridTab(
-                    appProfiles: _filter(hospitals),
-                    nearMePlaceholder: 'Hospitals near you',
-                    emptyMessage: 'No registered hospitals found',
-                    emptyIcon: Icons.local_hospital_outlined,
-                    accentColor: const Color(0xFF0891B2),
-                    showHire: false,
-                  ),
-
-                  // Pharmacy
-                  _HybridTab(
-                    appProfiles: _filter(pharmacies),
-                    nearMePlaceholder: 'Pharmacies near you',
-                    emptyMessage: 'No registered pharmacies found',
-                    emptyIcon: Icons.local_pharmacy_outlined,
-                    accentColor: const Color(0xFF7C3AED),
-                    showHire: false,
-                  ),
-                ],
+                  EdgeInsets.symmetric(horizontal: 16.w),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (ctx, i) {
+                    final e = regular[i];
+                    return _ProfileCard(
+                      profile: e.profile,
+                      cat: e.cat,
+                      showHire: e.cat == _Cat.caregivers,
+                    )
+                        .animate()
+                        .fadeIn(
+                            duration: 280.ms,
+                            delay: (i * 50).ms)
+                        .slideY(
+                            begin: 0.04,
+                            end: 0,
+                            duration: 280.ms,
+                            delay: (i * 50).ms);
+                  },
+                  childCount: regular.length,
+                ),
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
 
-  List<DiscoveryProfile> _filter(List<DiscoveryProfile> list) {
-    if (_query.isEmpty) return list;
-    final q = _query.toLowerCase();
-    return list
-        .where((p) =>
-            p.name.toLowerCase().contains(q) ||
-            p.specialty.toLowerCase().contains(q))
-        .toList();
-  }
-}
+          // ── Empty State ──────────────────────────────────────────────────
+          if (visibleTagged.isEmpty)
+            SliverToBoxAdapter(
+              child: _EmptyState(cat: _selected)
+                  .animate()
+                  .fadeIn(duration: 400.ms),
+            ),
 
-// ─── Search Bar ───────────────────────────────────────────────────────────────
-
-class _SearchBar extends StatelessWidget {
-  final TextEditingController controller;
-  final ValueChanged<String> onChanged;
-
-  const _SearchBar({required this.controller, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 44.h,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14.r),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+          // ── Near Me ──────────────────────────────────────────────────────
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 0),
+              child: _NearMeCard(
+                accentColor: accentColor,
+                gradientColors: gradientColors,
+                label: _selected == _Cat.all
+                    ? 'healthcare providers'
+                    : _selected.label.toLowerCase(),
+              ),
+            ).animate().fadeIn(duration: 300.ms, delay: 120.ms),
           ),
+
+          SliverToBoxAdapter(child: SizedBox(height: 120.h)),
         ],
       ),
-      child: TextField(
-        controller: controller,
-        onChanged: onChanged,
-        style: GoogleFonts.inter(fontSize: 14.sp, color: const Color(0xFF0F172A)),
-        decoration: InputDecoration(
-          hintText: 'Search by name or specialty…',
-          hintStyle:
-              GoogleFonts.inter(fontSize: 13.sp, color: const Color(0xFF94A3B8)),
-          prefixIcon:
-              Icon(Icons.search_rounded, size: 20.w, color: const Color(0xFF94A3B8)),
-          suffixIcon: controller.text.isNotEmpty
-              ? GestureDetector(
-                  onTap: () => controller.clear(),
-                  child: Icon(Icons.close_rounded,
-                      size: 18.w, color: const Color(0xFF94A3B8)),
-                )
-              : null,
-          border: InputBorder.none,
-          contentPadding: EdgeInsets.symmetric(vertical: 12.h),
-        ),
-      ),
     );
   }
 }
 
-// ─── Caregiver Tab ────────────────────────────────────────────────────────────
+// ─── Hero Header ─────────────────────────────────────────────────────────────
 
-class _CaregiverTab extends StatelessWidget {
-  final List<DiscoveryProfile> caregivers;
-  const _CaregiverTab({required this.caregivers});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: EdgeInsets.symmetric(horizontal: 16.w),
-      children: [
-        if (caregivers.isNotEmpty) ...[
-          _SectionHeader(
-            icon: Icons.verified_rounded,
-            label: 'Pro Caregivers on CureSync',
-            color: const Color(0xFF0D9488),
-          ),
-          SizedBox(height: 8.h),
-          ...caregivers.asMap().entries.map((e) => Padding(
-                padding: EdgeInsets.only(bottom: 10.h),
-                child: _ProfileCard(
-                  profile: e.value,
-                  showHire: true,
-                )
-                    .animate()
-                    .fadeIn(duration: 300.ms, delay: (e.key * 60).ms)
-                    .slideX(
-                        begin: 0.03,
-                        end: 0,
-                        duration: 300.ms,
-                        delay: (e.key * 60).ms),
-              )),
-        ],
-        _SectionHeader(
-          icon: Icons.location_on_rounded,
-          label: 'Caregivers Near You',
-          color: const Color(0xFF0891B2),
-        ),
-        SizedBox(height: 8.h),
-        _NearMePlaceholder(label: 'caregivers'),
-        SizedBox(height: 16.h),
-      ],
-    );
-  }
-}
-
-// ─── Hybrid Tab ───────────────────────────────────────────────────────────────
-
-class _HybridTab extends StatelessWidget {
-  final List<DiscoveryProfile> appProfiles;
-  final String nearMePlaceholder;
-  final String emptyMessage;
-  final IconData emptyIcon;
+class _HeroHeader extends StatelessWidget {
+  final List<Color> gradientColors;
   final Color accentColor;
-  final bool showHire;
+  final String query;
+  final TextEditingController controller;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onClearSearch;
 
-  const _HybridTab({
-    required this.appProfiles,
-    required this.nearMePlaceholder,
-    required this.emptyMessage,
-    required this.emptyIcon,
+  const _HeroHeader({
+    required this.gradientColors,
     required this.accentColor,
-    required this.showHire,
+    required this.query,
+    required this.controller,
+    required this.onSearchChanged,
+    required this.onClearSearch,
   });
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: EdgeInsets.symmetric(horizontal: 16.w),
-      children: [
-        if (appProfiles.isNotEmpty) ...[
-          _SectionHeader(
-            icon: Icons.verified_rounded,
-            label: 'On CureSync',
-            color: accentColor,
-          ),
-          SizedBox(height: 8.h),
-          ...appProfiles.asMap().entries.map((e) => Padding(
-                padding: EdgeInsets.only(bottom: 10.h),
-                child: _ProfileCard(
-                  profile: e.value,
-                  accentColor: accentColor,
-                  showHire: showHire,
-                )
-                    .animate()
-                    .fadeIn(duration: 300.ms, delay: (e.key * 60).ms)
-                    .slideX(
-                        begin: 0.03,
-                        end: 0,
-                        duration: 300.ms,
-                        delay: (e.key * 60).ms),
-              )),
-          SizedBox(height: 8.h),
-        ] else ...[
-          SizedBox(height: 8.h),
-          Center(
-            child: Column(
-              children: [
-                Icon(emptyIcon, size: 36.w, color: const Color(0xFFCBD5E1)),
-                SizedBox(height: 8.h),
-                Text(
-                  emptyMessage,
-                  style: GoogleFonts.inter(
-                      fontSize: 13.sp, color: const Color(0xFF94A3B8)),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(height: 16.h),
-        ],
-        _SectionHeader(
-          icon: Icons.location_on_rounded,
-          label: nearMePlaceholder,
-          color: const Color(0xFF64748B),
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 400),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: gradientColors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        SizedBox(height: 8.h),
-        _NearMePlaceholder(label: nearMePlaceholder.toLowerCase()),
-        SizedBox(height: 16.h),
-      ],
+        borderRadius:
+            const BorderRadius.vertical(bottom: Radius.circular(32)),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(20.w, 14.h, 20.w, 24.h),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Title row
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Discovery Hub',
+                          style: GoogleFonts.poppins(
+                            fontSize: 26.sp,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            height: 1.1,
+                          ),
+                        ),
+                        SizedBox(height: 4.h),
+                        Text(
+                          'Doctors · Caregivers · Hospitals · Pharmacy',
+                          style: GoogleFonts.inter(
+                            fontSize: 12.sp,
+                            color: Colors.white.withValues(alpha: 0.75),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Healthcare icon cluster
+                  Container(
+                    height: 52.w,
+                    width: 52.w,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(16.r),
+                    ),
+                    child: Icon(
+                      Icons.health_and_safety_rounded,
+                      size: 28.w,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+
+              SizedBox(height: 18.h),
+
+              // Search bar
+              Container(
+                height: 48.h,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16.r),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.12),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: TextField(
+                  controller: controller,
+                  onChanged: onSearchChanged,
+                  style: GoogleFonts.inter(
+                    fontSize: 14.sp,
+                    color: const Color(0xFF0F172A),
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Search by name or specialty…',
+                    hintStyle: GoogleFonts.inter(
+                      fontSize: 13.sp,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                    prefixIcon: Icon(
+                      Icons.search_rounded,
+                      size: 20.w,
+                      color: accentColor,
+                    ),
+                    suffixIcon: query.isNotEmpty
+                        ? GestureDetector(
+                            onTap: onClearSearch,
+                            child: Icon(
+                              Icons.close_rounded,
+                              size: 18.w,
+                              color: const Color(0xFF94A3B8),
+                            ),
+                          )
+                        : null,
+                    border: InputBorder.none,
+                    contentPadding:
+                        EdgeInsets.symmetric(vertical: 14.h),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    )
+        .animate()
+        .fadeIn(duration: 350.ms)
+        .slideY(begin: -0.04, end: 0, duration: 350.ms);
+  }
+}
+
+// ─── Category Pills ───────────────────────────────────────────────────────────
+
+class _CategoryPills extends StatelessWidget {
+  final _Cat selected;
+  final ValueChanged<_Cat> onSelect;
+  final Color? allPillOverride;
+
+  const _CategoryPills({
+    required this.selected,
+    required this.onSelect,
+    this.allPillOverride,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 52.h,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.fromLTRB(16.w, 10.h, 16.w, 0),
+        physics: const BouncingScrollPhysics(),
+        children: _Cat.values.map((cat) {
+          final isActive = selected == cat;
+          final pillColor = (cat == _Cat.all && allPillOverride != null)
+              ? allPillOverride!
+              : cat.color;
+          return GestureDetector(
+            onTap: () => onSelect(cat),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              margin: EdgeInsets.only(right: 8.w),
+              padding: EdgeInsets.symmetric(
+                  horizontal: 14.w, vertical: 7.h),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? pillColor
+                    : Colors.white,
+                borderRadius: BorderRadius.circular(22.r),
+                border: Border.all(
+                  color: isActive
+                      ? pillColor
+                      : const Color(0xFFE2E8F0),
+                  width: isActive ? 0 : 1,
+                ),
+                boxShadow: isActive
+                    ? [
+                        BoxShadow(
+                          color: pillColor.withValues(alpha: 0.35),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ]
+                    : [
+                        BoxShadow(
+                          color:
+                              Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    cat.icon,
+                    size: 14.w,
+                    color: isActive ? Colors.white : const Color(0xFF64748B),
+                  ),
+                  SizedBox(width: 6.w),
+                  Text(
+                    cat.label,
+                    style: GoogleFonts.inter(
+                      fontSize: 12.sp,
+                      fontWeight: isActive
+                          ? FontWeight.w700
+                          : FontWeight.w500,
+                      color: isActive
+                          ? Colors.white
+                          : const Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ),
     );
   }
 }
@@ -428,265 +546,277 @@ class _SectionHeader extends StatelessWidget {
   final String label;
   final Color color;
 
-  const _SectionHeader(
-      {required this.icon, required this.label, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, size: 16.w, color: color),
-        SizedBox(width: 6.w),
-        Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 13.sp,
-            fontWeight: FontWeight.w700,
-            color: color,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ─── Profile Card ─────────────────────────────────────────────────────────────
-
-class _ProfileCard extends StatelessWidget {
-  final DiscoveryProfile profile;
-  final Color accentColor;
-  final bool showHire;
-
-  const _ProfileCard({
-    required this.profile,
-    this.accentColor = const Color(0xFF0D9488),
-    this.showHire = false,
+  const _SectionHeader({
+    required this.icon,
+    required this.label,
+    required this.color,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.all(14.w),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16.r),
-        boxShadow: [
-          BoxShadow(
-            color: accentColor.withValues(alpha: 0.06),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 10.h),
+      child: Row(
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Avatar
-              Container(
-                height: 52.w,
-                width: 52.w,
-                decoration: BoxDecoration(
-                  color: accentColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(14.r),
-                ),
-                child: profile.photoUrl != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(14.r),
-                        child: Image.network(
-                          profile.photoUrl!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) =>
-                              _avatarFallback(accentColor),
-                        ),
-                      )
-                    : _avatarFallback(accentColor),
-              ),
-              SizedBox(width: 12.w),
-
-              // Name + specialty + location
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Name + verified badge
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            profile.name,
-                            style: GoogleFonts.poppins(
-                              fontSize: 14.sp,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF0F172A),
-                            ),
-                          ),
-                        ),
-                        if (profile.isVerified) ...[
-                          SizedBox(width: 5.w),
-                          Container(
-                            padding: EdgeInsets.symmetric(
-                                horizontal: 5.w, vertical: 2.h),
-                            decoration: BoxDecoration(
-                              color: accentColor.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(6.r),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.verified_rounded,
-                                    size: 10.w, color: accentColor),
-                                SizedBox(width: 2.w),
-                                Text(
-                                  'Verified',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 9.sp,
-                                    fontWeight: FontWeight.w700,
-                                    color: accentColor,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-
-                    SizedBox(height: 2.h),
-                    Text(
-                      profile.specialty,
-                      style: GoogleFonts.inter(
-                        fontSize: 12.sp,
-                        color: const Color(0xFF64748B),
-                      ),
-                    ),
-
-                    if (profile.yearsOfExperience > 0) ...[
-                      SizedBox(height: 2.h),
-                      Text(
-                        '${profile.yearsOfExperience} yrs experience',
-                        style: GoogleFonts.inter(
-                          fontSize: 11.sp,
-                          color: const Color(0xFF94A3B8),
-                        ),
-                      ),
-                    ],
-
-                    if (profile.location != null) ...[
-                      SizedBox(height: 4.h),
-                      Row(
-                        children: [
-                          Icon(Icons.location_on_rounded,
-                              size: 12.w,
-                              color: const Color(0xFF94A3B8)),
-                          SizedBox(width: 3.w),
-                          Flexible(
-                            child: Text(
-                              profile.location!,
-                              style: GoogleFonts.inter(
-                                fontSize: 11.sp,
-                                color: const Color(0xFF94A3B8),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-
-              // Rating + action button
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  if (profile.avgRating != null)
-                    _RatingBadge(
-                      rating: profile.avgRating!,
-                      count: profile.reviewCount,
-                    ),
-                  SizedBox(height: 8.h),
-                  showHire
-                      ? _HireButton(profile: profile, accentColor: accentColor)
-                      : _ContactButton(accentColor: accentColor),
-                ],
-              ),
-            ],
-          ),
-
-          // Stats row: success rate + availability
-          if (profile.successRate != null || showHire) ...[
-            SizedBox(height: 10.h),
-            Divider(color: const Color(0xFFE2E8F0), height: 1.h),
-            SizedBox(height: 8.h),
-            Row(
-              children: [
-                if (profile.successRate != null) ...[
-                  Icon(Icons.trending_up_rounded,
-                      size: 13.w, color: const Color(0xFF16A34A)),
-                  SizedBox(width: 4.w),
-                  Text(
-                    '${profile.successRate}% success rate',
-                    style: GoogleFonts.inter(
-                      fontSize: 11.sp,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF16A34A),
-                    ),
-                  ),
-                  SizedBox(width: 12.w),
-                ],
-                if (showHire) ...[
-                  Container(
-                    height: 7.w,
-                    width: 7.w,
-                    decoration: BoxDecoration(
-                      color: profile.isAvailableForHire
-                          ? const Color(0xFF16A34A)
-                          : const Color(0xFFEF4444),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  SizedBox(width: 4.w),
-                  Text(
-                    profile.isAvailableForHire
-                        ? 'Available for hire'
-                        : 'Not available',
-                    style: GoogleFonts.inter(
-                      fontSize: 11.sp,
-                      fontWeight: FontWeight.w600,
-                      color: profile.isAvailableForHire
-                          ? const Color(0xFF16A34A)
-                          : const Color(0xFFEF4444),
-                    ),
-                  ),
-                  if (profile.hourlyRate > 0) ...[
-                    const Spacer(),
-                    Text(
-                      '\$${profile.hourlyRate.toStringAsFixed(0)}/hr',
-                      style: GoogleFonts.inter(
-                        fontSize: 11.sp,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF0F172A),
-                      ),
-                    ),
-                  ],
-                ],
-              ],
+          Container(
+            height: 28.w,
+            width: 28.w,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8.r),
             ),
-          ],
+            child: Icon(icon, size: 15.w, color: color),
+          ),
+          SizedBox(width: 8.w),
+          Text(
+            label,
+            style: GoogleFonts.poppins(
+              fontSize: 14.sp,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF0F172A),
+            ),
+          ),
         ],
       ),
     );
   }
+}
 
-  Widget _avatarFallback(Color color) {
+// ─── Featured Card (horizontal scroll) ───────────────────────────────────────
+
+class _FeaturedCard extends StatelessWidget {
+  final DiscoveryProfile profile;
+  final _Cat cat;
+  final bool showHire;
+
+  const _FeaturedCard({
+    required this.profile,
+    required this.cat,
+    required this.showHire,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = cat.color;
+    final gradient = cat.gradient;
+
+    return GestureDetector(
+      onTap: showHire && profile.isAvailableForHire
+          ? () {
+              HapticFeedback.lightImpact();
+              showModalBottomSheet(
+                context: context,
+                backgroundColor: Colors.transparent,
+                isScrollControlled: true,
+                builder: (_) => _HireSheet(profile: profile),
+              );
+            }
+          : () => HapticFeedback.lightImpact(),
+      child: Container(
+        width: 190.w,
+        margin: EdgeInsets.only(right: 12.w),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: gradient,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(22.r),
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: 0.35),
+              blurRadius: 18,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            // Decorative circle
+            Positioned(
+              top: -20,
+              right: -20,
+              child: Container(
+                height: 90.w,
+                width: 90.w,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.all(16.w),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Avatar + rating row
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        height: 48.w,
+                        width: 48.w,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(14.r),
+                        ),
+                        child: profile.photoUrl != null
+                            ? ClipRRect(
+                                borderRadius:
+                                    BorderRadius.circular(14.r),
+                                child: Image.network(
+                                  profile.photoUrl!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) =>
+                                      _avatarText(Colors.white),
+                                ),
+                              )
+                            : _avatarText(Colors.white),
+                      ),
+                      const Spacer(),
+                      if (profile.avgRating != null)
+                        Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 7.w, vertical: 4.h),
+                          decoration: BoxDecoration(
+                            color:
+                                Colors.white.withValues(alpha: 0.2),
+                            borderRadius:
+                                BorderRadius.circular(10.r),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.star_rounded,
+                                  size: 11.w,
+                                  color: const Color(0xFFFDE68A)),
+                              SizedBox(width: 3.w),
+                              Text(
+                                profile.avgRating!
+                                    .toStringAsFixed(1),
+                                style: GoogleFonts.inter(
+                                  fontSize: 11.sp,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+
+                  SizedBox(height: 10.h),
+
+                  // Name
+                  Text(
+                    profile.name,
+                    style: GoogleFonts.poppins(
+                      fontSize: 13.sp,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+
+                  SizedBox(height: 2.h),
+
+                  // Specialty
+                  Text(
+                    profile.specialty,
+                    style: GoogleFonts.inter(
+                      fontSize: 11.sp,
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+
+                  const Spacer(),
+
+                  // Bottom row
+                  Row(
+                    children: [
+                      if (profile.isVerified)
+                        Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 6.w, vertical: 3.h),
+                          decoration: BoxDecoration(
+                            color:
+                                Colors.white.withValues(alpha: 0.2),
+                            borderRadius:
+                                BorderRadius.circular(6.r),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.verified_rounded,
+                                  size: 9.w, color: Colors.white),
+                              SizedBox(width: 3.w),
+                              Text(
+                                'Verified',
+                                style: GoogleFonts.inter(
+                                  fontSize: 9.sp,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      const Spacer(),
+                      if (showHire)
+                        Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 10.w, vertical: 5.h),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius:
+                                BorderRadius.circular(10.r),
+                          ),
+                          child: Text(
+                            profile.isAvailableForHire
+                                ? 'Hire'
+                                : 'View',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.sp,
+                              fontWeight: FontWeight.w700,
+                              color: color,
+                            ),
+                          ),
+                        )
+                      else
+                        Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 10.w, vertical: 5.h),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius:
+                                BorderRadius.circular(10.r),
+                          ),
+                          child: Text(
+                            'Contact',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.sp,
+                              fontWeight: FontWeight.w700,
+                              color: color,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _avatarText(Color color) {
     return Center(
       child: Text(
         profile.name.isNotEmpty ? profile.name[0].toUpperCase() : '?',
@@ -700,87 +830,25 @@ class _ProfileCard extends StatelessWidget {
   }
 }
 
-// ─── Rating Badge ─────────────────────────────────────────────────────────────
+// ─── Profile Card (vertical list) ────────────────────────────────────────────
 
-class _RatingBadge extends StatelessWidget {
-  final double rating;
-  final int count;
-  const _RatingBadge({required this.rating, required this.count});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.star_rounded,
-                size: 14.w, color: const Color(0xFFF59E0B)),
-            SizedBox(width: 2.w),
-            Text(
-              rating.toStringAsFixed(1),
-              style: GoogleFonts.inter(
-                fontSize: 13.sp,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF0F172A),
-              ),
-            ),
-          ],
-        ),
-        if (count > 0)
-          Text(
-            '($count)',
-            style: GoogleFonts.inter(
-              fontSize: 10.sp,
-              color: const Color(0xFF94A3B8),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-// ─── Contact Button ───────────────────────────────────────────────────────────
-
-class _ContactButton extends StatelessWidget {
-  final Color accentColor;
-  const _ContactButton({required this.accentColor});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => HapticFeedback.lightImpact(),
-      child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
-        decoration: BoxDecoration(
-          color: accentColor,
-          borderRadius: BorderRadius.circular(8.r),
-        ),
-        child: Text(
-          'Contact',
-          style: GoogleFonts.inter(
-            fontSize: 11.sp,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Hire Button ──────────────────────────────────────────────────────────────
-
-class _HireButton extends StatelessWidget {
+class _ProfileCard extends StatelessWidget {
   final DiscoveryProfile profile;
-  final Color accentColor;
-  const _HireButton({required this.profile, required this.accentColor});
+  final _Cat cat;
+  final bool showHire;
+
+  const _ProfileCard({
+    required this.profile,
+    required this.cat,
+    required this.showHire,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final color = cat.color;
+
     return GestureDetector(
-      onTap: profile.isAvailableForHire
+      onTap: showHire && profile.isAvailableForHire
           ? () {
               HapticFeedback.lightImpact();
               showModalBottomSheet(
@@ -790,31 +858,518 @@ class _HireButton extends StatelessWidget {
                 builder: (_) => _HireSheet(profile: profile),
               );
             }
-          : null,
+          : () => HapticFeedback.lightImpact(),
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
+        margin: EdgeInsets.only(bottom: 12.h),
         decoration: BoxDecoration(
-          color: profile.isAvailableForHire
-              ? accentColor
-              : const Color(0xFFE2E8F0),
-          borderRadius: BorderRadius.circular(8.r),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20.r),
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: 0.06),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-        child: Text(
-          'Hire',
-          style: GoogleFonts.inter(
-            fontSize: 11.sp,
-            fontWeight: FontWeight.w700,
-            color: profile.isAvailableForHire
-                ? Colors.white
-                : const Color(0xFF94A3B8),
-          ),
+        child: Column(
+          children: [
+            // Colored accent top bar
+            Container(
+              height: 4.h,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius:
+                    BorderRadius.vertical(top: Radius.circular(20.r)),
+              ),
+            ),
+
+            Padding(
+              padding: EdgeInsets.all(14.w),
+              child: Column(
+                children: [
+                  // ── Top row: avatar + info + action ─────────────────────
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Avatar
+                      Container(
+                        height: 56.w,
+                        width: 56.w,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: cat.gradient,
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius:
+                              BorderRadius.circular(16.r),
+                        ),
+                        child: profile.photoUrl != null
+                            ? ClipRRect(
+                                borderRadius:
+                                    BorderRadius.circular(16.r),
+                                child: Image.network(
+                                  profile.photoUrl!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) =>
+                                      _avatarFallback(color),
+                                ),
+                              )
+                            : _avatarFallback(color),
+                      ),
+
+                      SizedBox(width: 12.w),
+
+                      // Name + specialty + badges
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    profile.name,
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 14.sp,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF0F172A),
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (profile.isVerified)
+                                  Icon(
+                                    Icons.verified_rounded,
+                                    size: 15.w,
+                                    color: color,
+                                  ),
+                              ],
+                            ),
+                            SizedBox(height: 2.h),
+                            Text(
+                              profile.specialty,
+                              style: GoogleFonts.inter(
+                                fontSize: 12.sp,
+                                color: const Color(0xFF64748B),
+                              ),
+                            ),
+                            SizedBox(height: 6.h),
+                            // Star rating
+                            if (profile.avgRating != null)
+                              Row(
+                                children: [
+                                  ...List.generate(5, (i) {
+                                    final full =
+                                        i < profile.avgRating!.floor();
+                                    final half = !full &&
+                                        i < profile.avgRating! &&
+                                        (profile.avgRating! - i) >= 0.5;
+                                    return Icon(
+                                      full
+                                          ? Icons.star_rounded
+                                          : half
+                                              ? Icons.star_half_rounded
+                                              : Icons.star_outline_rounded,
+                                      size: 13.w,
+                                      color: const Color(0xFFF59E0B),
+                                    );
+                                  }),
+                                  SizedBox(width: 4.w),
+                                  Text(
+                                    profile.avgRating!.toStringAsFixed(1),
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11.sp,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                  if (profile.reviewCount > 0) ...[
+                                    Text(
+                                      ' (${profile.reviewCount})',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10.sp,
+                                        color: const Color(0xFF94A3B8),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  SizedBox(height: 12.h),
+
+                  // ── Info chips row ───────────────────────────────────────
+                  Row(
+                    children: [
+                      if (profile.yearsOfExperience > 0)
+                        _InfoPill(
+                          icon: Icons.workspace_premium_rounded,
+                          label: '${profile.yearsOfExperience} yrs',
+                          color: color,
+                        ),
+                      if (profile.yearsOfExperience > 0)
+                        SizedBox(width: 6.w),
+                      if (profile.location != null)
+                        Expanded(
+                          child: _InfoPill(
+                            icon: Icons.location_on_rounded,
+                            label: profile.location!,
+                            color: const Color(0xFF64748B),
+                            maxWidth: true,
+                          ),
+                        ),
+                      if (profile.successRate != null) ...[
+                        SizedBox(width: 6.w),
+                        _InfoPill(
+                          icon: Icons.trending_up_rounded,
+                          label:
+                              '${profile.successRate!.toInt()}%',
+                          color: const Color(0xFF16A34A),
+                        ),
+                      ],
+                    ],
+                  ),
+
+                  SizedBox(height: 12.h),
+
+                  // ── Action row ───────────────────────────────────────────
+                  Row(
+                    children: [
+                      // Category pill
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                            horizontal: 10.w, vertical: 5.h),
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8.r),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(cat.icon,
+                                size: 11.w, color: color),
+                            SizedBox(width: 4.w),
+                            Text(
+                              cat.label,
+                              style: GoogleFonts.inter(
+                                fontSize: 10.sp,
+                                fontWeight: FontWeight.w700,
+                                color: color,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      if (showHire && profile.hourlyRate > 0) ...[
+                        SizedBox(width: 8.w),
+                        Text(
+                          '\$${profile.hourlyRate.toStringAsFixed(0)}/hr',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12.sp,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF0F172A),
+                          ),
+                        ),
+                      ],
+
+                      const Spacer(),
+
+                      // Action button
+                      GestureDetector(
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          if (showHire) {
+                            showModalBottomSheet(
+                              context: context,
+                              backgroundColor: Colors.transparent,
+                              isScrollControlled: true,
+                              builder: (_) =>
+                                  _HireSheet(profile: profile),
+                            );
+                          }
+                        },
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 16.w, vertical: 8.h),
+                          decoration: BoxDecoration(
+                            color: showHire && !profile.isAvailableForHire
+                                ? const Color(0xFFE2E8F0)
+                                : color,
+                            borderRadius: BorderRadius.circular(12.r),
+                            boxShadow: showHire &&
+                                    profile.isAvailableForHire
+                                ? [
+                                    BoxShadow(
+                                      color:
+                                          color.withValues(alpha: 0.3),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 3),
+                                    ),
+                                  ]
+                                : null,
+                          ),
+                          child: Text(
+                            showHire
+                                ? (profile.isAvailableForHire
+                                    ? 'Hire'
+                                    : 'Unavailable')
+                                : 'Contact',
+                            style: GoogleFonts.inter(
+                              fontSize: 12.sp,
+                              fontWeight: FontWeight.w700,
+                              color: showHire &&
+                                      !profile.isAvailableForHire
+                                  ? const Color(0xFF94A3B8)
+                                  : Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _avatarFallback(Color color) {
+    return Center(
+      child: Text(
+        profile.name.isNotEmpty ? profile.name[0].toUpperCase() : '?',
+        style: GoogleFonts.poppins(
+          fontSize: 20.sp,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
         ),
       ),
     );
   }
 }
 
-// ─── Hire Sheet ───────────────────────────────────────────────────────────────
+// ─── Info Pill ────────────────────────────────────────────────────────────────
+
+class _InfoPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final bool maxWidth;
+
+  const _InfoPill({
+    required this.icon,
+    required this.label,
+    required this.color,
+    this.maxWidth = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final child = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 11.w, color: color),
+        SizedBox(width: 4.w),
+        maxWidth
+            ? Flexible(
+                child: Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: 10.sp,
+                    color: color,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              )
+            : Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 10.sp,
+                  color: color,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+      ],
+    );
+
+    return Container(
+      padding:
+          EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(7.r),
+      ),
+      child: child,
+    );
+  }
+}
+
+// ─── Near Me Card ─────────────────────────────────────────────────────────────
+
+class _NearMeCard extends StatelessWidget {
+  final Color accentColor;
+  final List<Color> gradientColors;
+  final String label;
+
+  const _NearMeCard({
+    required this.accentColor,
+    required this.gradientColors,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            gradientColors[0].withValues(alpha: 0.08),
+            gradientColors[1].withValues(alpha: 0.04),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(22.r),
+        border: Border.all(
+          color: accentColor.withValues(alpha: 0.15),
+        ),
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(20.w),
+        child: Row(
+          children: [
+            Container(
+              height: 52.w,
+              width: 52.w,
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(16.r),
+              ),
+              child: Icon(
+                Icons.my_location_rounded,
+                size: 26.w,
+                color: accentColor,
+              ),
+            ),
+            SizedBox(width: 14.w),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Find Near You',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF0F172A),
+                    ),
+                  ),
+                  SizedBox(height: 2.h),
+                  Text(
+                    'Enable location to find $label within 5 km',
+                    style: GoogleFonts.inter(
+                      fontSize: 11.sp,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(width: 12.w),
+            GestureDetector(
+              onTap: () => HapticFeedback.lightImpact(),
+              child: Container(
+                padding: EdgeInsets.symmetric(
+                    horizontal: 14.w, vertical: 10.h),
+                decoration: BoxDecoration(
+                  color: accentColor,
+                  borderRadius: BorderRadius.circular(12.r),
+                  boxShadow: [
+                    BoxShadow(
+                      color: accentColor.withValues(alpha: 0.3),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  'Allow',
+                  style: GoogleFonts.inter(
+                    fontSize: 12.sp,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Empty State ──────────────────────────────────────────────────────────────
+
+class _EmptyState extends StatelessWidget {
+  final _Cat cat;
+  const _EmptyState({required this.cat});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 48.h, horizontal: 20.w),
+      child: Column(
+        children: [
+          Container(
+            height: 72.w,
+            width: 72.w,
+            decoration: BoxDecoration(
+              color: cat.color.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(cat.icon, size: 34.w, color: cat.color),
+          ),
+          SizedBox(height: 14.h),
+          Text(
+            cat.emptyLabel,
+            style: GoogleFonts.poppins(
+              fontSize: 15.sp,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF0F172A),
+            ),
+          ),
+          SizedBox(height: 4.h),
+          Text(
+            'Check back later or search by name.',
+            style: GoogleFonts.inter(
+              fontSize: 13.sp,
+              color: const Color(0xFF94A3B8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Hire Sheet (logic unchanged) ────────────────────────────────────────────
 
 class _HireSheet extends ConsumerStatefulWidget {
   final DiscoveryProfile profile;
@@ -827,29 +1382,28 @@ class _HireSheet extends ConsumerStatefulWidget {
 class _HireSheetState extends ConsumerState<_HireSheet> {
   bool _isPaid = true;
   bool _sending = false;
-  PatientModel? _selectedPatient; // manager-only: patient picker selection
+  PatientModel? _selectedPatient;
 
   bool get _isManager {
-    final roleStr =
-        ref.read(currentUserDataProvider).valueOrNull?.role;
+    final roleStr = ref.read(currentUserDataProvider).valueOrNull?.role;
     return UserRoleX.fromString(roleStr) == UserRole.manager;
   }
 
   Future<void> _sendRequest() async {
     setState(() => _sending = true);
-
     final authUser = ref.read(authStateProvider).valueOrNull;
 
-    // Resolve the patient — manager picks explicitly, patient uses active id
     PatientModel? patient;
     if (_isManager) {
       patient = _selectedPatient;
     } else {
       final patientId = ref.read(resolvedActivePatientIdProvider);
-      final patients = ref.read(patientsStreamProvider).valueOrNull ?? [];
+      final patients =
+          ref.read(patientsStreamProvider).valueOrNull ?? [];
       patient = patients.firstWhere(
         (p) => p.patientId == patientId,
-        orElse: () => patients.isNotEmpty ? patients.first : patients.first,
+        orElse: () =>
+            patients.isNotEmpty ? patients.first : patients.first,
       );
     }
 
@@ -899,25 +1453,24 @@ class _HireSheetState extends ConsumerState<_HireSheet> {
   @override
   Widget build(BuildContext context) {
     final isManager = _isManager;
-    final patients = ref.watch(patientsStreamProvider).valueOrNull ?? [];
-
-    // For manager: button is only enabled when a patient is selected
-    final canSend = !_sending &&
-        (!isManager || _selectedPatient != null);
+    final patients =
+        ref.watch(patientsStreamProvider).valueOrNull ?? [];
+    final canSend =
+        !_sending && (!isManager || _selectedPatient != null);
 
     return Material(
       color: Colors.transparent,
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(24.r)),
         ),
         padding: EdgeInsets.fromLTRB(20.w, 12.h, 20.w, 36.h),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Handle
             Center(
               child: Container(
                 width: 40.w,
@@ -930,14 +1483,14 @@ class _HireSheetState extends ConsumerState<_HireSheet> {
             ),
             SizedBox(height: 20.h),
 
-            // Caregiver summary
             Row(
               children: [
                 Container(
                   height: 48.w,
                   width: 48.w,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0D9488).withValues(alpha: 0.1),
+                    color: const Color(0xFF0D9488)
+                        .withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(14.r),
                   ),
                   child: Center(
@@ -1001,7 +1554,6 @@ class _HireSheetState extends ConsumerState<_HireSheet> {
             ),
             SizedBox(height: 24.h),
 
-            // ── Manager-only: Patient Picker ─────────────────────────────
             if (isManager) ...[
               Text(
                 'Select Patient',
@@ -1018,7 +1570,8 @@ class _HireSheetState extends ConsumerState<_HireSheet> {
                   decoration: BoxDecoration(
                     color: const Color(0xFFFFF7ED),
                     borderRadius: BorderRadius.circular(12.r),
-                    border: Border.all(color: const Color(0xFFFED7AA)),
+                    border:
+                        Border.all(color: const Color(0xFFFED7AA)),
                   ),
                   child: Text(
                     'No patients found. Add a patient first from your dashboard.',
@@ -1030,7 +1583,8 @@ class _HireSheetState extends ConsumerState<_HireSheet> {
                 )
               else
                 ...patients.map((p) {
-                  final isSelected = _selectedPatient?.patientId == p.patientId;
+                  final isSelected =
+                      _selectedPatient?.patientId == p.patientId;
                   return GestureDetector(
                     onTap: () {
                       HapticFeedback.selectionClick();
@@ -1043,7 +1597,8 @@ class _HireSheetState extends ConsumerState<_HireSheet> {
                           horizontal: 14.w, vertical: 12.h),
                       decoration: BoxDecoration(
                         color: isSelected
-                            ? const Color(0xFF0D9488).withValues(alpha: 0.06)
+                            ? const Color(0xFF0D9488)
+                                .withValues(alpha: 0.06)
                             : const Color(0xFFF8FBFA),
                         borderRadius: BorderRadius.circular(12.r),
                         border: Border.all(
@@ -1061,7 +1616,8 @@ class _HireSheetState extends ConsumerState<_HireSheet> {
                             decoration: BoxDecoration(
                               color: const Color(0xFF0D9488)
                                   .withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(10.r),
+                              borderRadius:
+                                  BorderRadius.circular(10.r),
                             ),
                             child: Center(
                               child: Text(
@@ -1079,16 +1635,16 @@ class _HireSheetState extends ConsumerState<_HireSheet> {
                           SizedBox(width: 12.w),
                           Expanded(
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  p.name,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 13.sp,
-                                    fontWeight: FontWeight.w600,
-                                    color: const Color(0xFF0F172A),
-                                  ),
-                                ),
+                                Text(p.name,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 13.sp,
+                                      fontWeight: FontWeight.w600,
+                                      color:
+                                          const Color(0xFF0F172A),
+                                    )),
                                 Text(
                                   '${p.relation} · ${p.age} yrs',
                                   style: GoogleFonts.inter(
@@ -1100,11 +1656,9 @@ class _HireSheetState extends ConsumerState<_HireSheet> {
                             ),
                           ),
                           if (isSelected)
-                            Icon(
-                              Icons.check_circle_rounded,
-                              size: 20.w,
-                              color: const Color(0xFF0D9488),
-                            ),
+                            Icon(Icons.check_circle_rounded,
+                                size: 20.w,
+                                color: const Color(0xFF0D9488)),
                         ],
                       ),
                     ),
@@ -1113,7 +1667,6 @@ class _HireSheetState extends ConsumerState<_HireSheet> {
               SizedBox(height: 16.h),
             ],
 
-            // Payment terms
             Text(
               'Payment Terms',
               style: GoogleFonts.poppins(
@@ -1238,13 +1791,11 @@ class _TermChip extends StatelessWidget {
           ),
           child: Column(
             children: [
-              Icon(
-                icon,
-                size: 22.w,
-                color: selected
-                    ? const Color(0xFF0D9488)
-                    : const Color(0xFF94A3B8),
-              ),
+              Icon(icon,
+                  size: 22.w,
+                  color: selected
+                      ? const Color(0xFF0D9488)
+                      : const Color(0xFF94A3B8)),
               SizedBox(height: 4.h),
               Text(
                 label,
@@ -1262,77 +1813,4 @@ class _TermChip extends StatelessWidget {
       ),
     );
   }
-}
-
-// ─── Near Me Placeholder ──────────────────────────────────────────────────────
-
-class _NearMePlaceholder extends StatelessWidget {
-  final String label;
-  const _NearMePlaceholder({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.all(20.w),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0D9488).withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(16.r),
-        border: Border.all(
-          color: const Color(0xFF0D9488).withValues(alpha: 0.12),
-        ),
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.location_searching_rounded,
-              size: 32.w, color: const Color(0xFF0D9488)),
-          SizedBox(height: 10.h),
-          Text(
-            'Enable Location for Near Me',
-            style: GoogleFonts.poppins(
-              fontSize: 14.sp,
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFF0F172A),
-            ),
-          ),
-          SizedBox(height: 4.h),
-          Text(
-            'Find $label within 5 km via Google Places',
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              fontSize: 12.sp,
-              color: const Color(0xFF64748B),
-            ),
-          ),
-          SizedBox(height: 14.h),
-          GestureDetector(
-            onTap: () => HapticFeedback.lightImpact(),
-            child: Container(
-              padding:
-                  EdgeInsets.symmetric(horizontal: 20.w, vertical: 10.h),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0D9488),
-                borderRadius: BorderRadius.circular(10.r),
-              ),
-              child: Text(
-                'Allow Location',
-                style: GoogleFonts.inter(
-                  fontSize: 13.sp,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Tab Metadata ─────────────────────────────────────────────────────────────
-
-class _TabMeta {
-  final IconData icon;
-  final String label;
-  const _TabMeta({required this.icon, required this.label});
 }

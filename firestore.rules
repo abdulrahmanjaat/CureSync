@@ -20,16 +20,40 @@ service cloud.firestore {
     }
 
     function canAccessPatient(patientId) {
-      let patient = get(/databases/$(database)/documents/patients/$(patientId));
+      // Short-circuit: a patient may always read their own sub-collections,
+      // even before their patients/{uid} document is created (race-safe).
+      // The get() call is skipped entirely for self-reads via || short-circuit.
       return request.auth != null && (
-        patient.data.managerId == request.auth.uid ||
+        request.auth.uid == patientId ||
+        get(/databases/$(database)/documents/patients/$(patientId)).data.managerId
+          == request.auth.uid ||
+        isInAccessList(patientId)
+      );
+    }
+
+    /// True when the caller may WRITE to a patient's sub-collections.
+    /// Two paths are valid:
+    ///   1. Manager: the patient document's managerId matches the caller.
+    ///   2. Patient self-write: the Firestore doc ID is the caller's own UID
+    ///      (patients/{uid} — set by ensureSelfPatient). This avoids a
+    ///      dependency on the managerId field existing in the document, which
+    ///      eliminates the race condition on first login where the patient doc
+    ///      may not have been created yet when the first medication save fires.
+    function canWriteToPatient(patientId) {
+      return isAuthenticated() && (
+        get(/databases/$(database)/documents/patients/$(patientId)).data.managerId
+          == request.auth.uid ||
+        request.auth.uid == patientId ||
         isInAccessList(patientId)
       );
     }
 
     // ─── Users ───────────────────────────────────────────────────────────────────
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
+      // Any authenticated user may read a profile (for name/role display in
+      // care circles, caregiver rows, etc.). Only the owner may write.
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId);
 
       // Notification history sub-collection
       match /notifications/{notifId} {
@@ -41,9 +65,12 @@ service cloud.firestore {
     match /patients/{patientId} {
       allow create: if isAuthenticated();
 
-      // Manager or anyone in accessList may read the patient document.
-      // limit == 1 allows the access-code lookup query (no document reference available).
+      // Short-circuit: a user may always read their own patient document,
+      // even when it does not exist yet (resource == null). This prevents
+      // the Firestore stream from erroring before ensureSelfPatient runs.
+      // All other callers fall through to the managerId / accessList checks.
       allow read: if isAuthenticated() && (
+        request.auth.uid == patientId ||
         resource.data.managerId == request.auth.uid ||
         request.auth.uid in resource.data.accessList ||
         request.query.limit == 1
@@ -76,27 +103,25 @@ service cloud.firestore {
         resource.data.managerId == request.auth.uid;
 
       // ── Medications sub-collection ────────────────────────────────────────────
-      // Only manager or accessList members may read medications.
-      // Only manager may write (add/edit/delete) medications.
+      // Manager OR the patient themselves may write their own medication records.
+      // AccessList members (family/caregiver) may only read.
       match /medications/{medId} {
         allow read: if canAccessPatient(patientId);
-        allow write: if isAuthenticated() &&
-          get(/databases/$(database)/documents/patients/$(patientId)).data.managerId == request.auth.uid;
+        allow write: if canWriteToPatient(patientId);
       }
 
       // ── Dose Logs sub-collection ──────────────────────────────────────────────
-      // Only manager may mark doses taken; accessList members may read.
+      // Manager OR the patient themselves may mark doses taken / untaken.
       match /dose_logs/{logId} {
         allow read: if canAccessPatient(patientId);
-        allow write: if isAuthenticated() &&
-          get(/databases/$(database)/documents/patients/$(patientId)).data.managerId == request.auth.uid;
+        allow write: if canWriteToPatient(patientId);
       }
 
-      // ── Any future nested sub-collections (recursive) ─────────────────────────
+      // ── Any future nested sub-collections (vitals, water, sleep, diet …) ──────
+      // Same policy: manager or the patient self may write; others may only read.
       match /{subcollection=**}/{document} {
         allow read: if canAccessPatient(patientId);
-        allow write: if isAuthenticated() &&
-          get(/databases/$(database)/documents/patients/$(patientId)).data.managerId == request.auth.uid;
+        allow write: if canWriteToPatient(patientId);
       }
     }
 

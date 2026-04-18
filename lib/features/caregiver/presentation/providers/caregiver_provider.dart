@@ -23,6 +23,16 @@ final caregiverProfileProvider =
   return ref.watch(caregiverRepositoryProvider).profileStream(uid);
 });
 
+/// Convenience bool provider — true once the pro-caregiver has submitted
+/// the multi-step onboarding form (onboardingComplete == true in Firestore).
+/// The router reads this to block access to /dashboard until setup is done.
+final proOnboardingCompleteProvider = Provider<bool>((ref) {
+  final profile = ref.watch(caregiverProfileProvider).valueOrNull;
+  // null means profile doc not yet loaded — treat as incomplete to be safe,
+  // but only the router cares about this value after role is confirmed.
+  return profile?.onboardingComplete ?? false;
+});
+
 // ─── Assigned Patients ────────────────────────────────────────────────────────
 
 final assignedPatientsProvider =

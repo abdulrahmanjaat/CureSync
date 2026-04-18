@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import '../models/medication_model.dart' show MedicationModel, MealTiming;
+import '../models/medication_model.dart' show MedicationModel, MealTiming, MealTimingX;
 import '../models/dose_log_model.dart';
 
 String _todayStr() {
@@ -24,8 +24,14 @@ class MedicationRepository {
 
   Stream<List<MedicationModel>> medicationsStream(String patientId) {
     return _medsRef(patientId).snapshots().map((snap) {
-      final list =
-          snap.docs.map((d) => MedicationModel.fromFirestore(d)).toList();
+      final list = <MedicationModel>[];
+      for (final d in snap.docs) {
+        try {
+          list.add(MedicationModel.fromFirestore(d));
+        } catch (_) {
+          // Skip malformed documents rather than erroring the whole stream.
+        }
+      }
       list.sort((a, b) => b.startDate.compareTo(a.startDate));
       return list;
     });
@@ -54,6 +60,27 @@ class MedicationRepository {
     );
     await doc.set(med.toFirestore());
     return med;
+  }
+
+  Future<void> updateMedication({
+    required String patientId,
+    required String medId,
+    required String name,
+    required String dosage,
+    required int durationDays,
+    required List<String> reminderTimes,
+    MealTiming mealTiming = MealTiming.noRestriction,
+    String? notes,
+  }) async {
+    final data = <String, dynamic>{
+      'name': name,
+      'dosage': dosage,
+      'durationDays': durationDays,
+      'reminderTimes': reminderTimes,
+      'mealTiming': mealTiming.firestoreValue,
+      'notes': (notes != null && notes.isNotEmpty) ? notes : FieldValue.delete(),
+    };
+    await _medsRef(patientId).doc(medId).update(data);
   }
 
   Future<void> deleteMedication(String patientId, String medId) async {

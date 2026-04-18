@@ -22,6 +22,9 @@ import '../widgets/dashboard/pill_timeline.dart';
 import '../widgets/dashboard/vitals_bento.dart';
 import '../widgets/dashboard/lifestyle_strip.dart';
 import '../widgets/dashboard/sos_slider.dart';
+import '../widgets/dashboard/access_code_card.dart';
+import '../../../notifications/presentation/screens/notification_history_screen.dart';
+import '../../../../core/services/notification_service.dart';
 
 // Fetches a user profile by UID — used for care circle and assigned caregiver
 final _caregiverUserProvider =
@@ -44,7 +47,17 @@ class HomeScreen extends ConsumerWidget {
   ///   • Replaces App Bar row with a patient-name context header.
   final bool trackingOnly;
 
-  const HomeScreen({super.key, this.trackingOnly = false});
+  /// Controls whether the Assigned Caregiver footer is shown in
+  /// [trackingOnly] mode. Set to false when a caregiver is viewing
+  /// the patient dashboard — the card is only relevant for patients
+  /// and managers.
+  final bool showCaregiverCard;
+
+  const HomeScreen({
+    super.key,
+    this.trackingOnly = false,
+    this.showCaregiverCard = true,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -69,12 +82,27 @@ class HomeScreen extends ConsumerWidget {
         ? ref.watch(resolvedActivePatientIdProvider)
         : selfId;
 
-    // Active patient object — used for the trackingOnly header and caregiver footer
-    final allPatients = ref.watch(patientsStreamProvider).valueOrNull ?? [];
+    // Own patient document — direct doc read, available as soon as Firestore
+    // responds (no query required). Used for the access code card.
+    final selfPatientDoc = !trackingOnly
+        ? ref.watch(selfPatientDocProvider).valueOrNull
+        : null;
+
+    // Active patient object — used for the trackingOnly header and caregiver footer.
+    // In trackingOnly mode read the patient doc directly so the name shows even
+    // when the caller is a caregiver (patientsStreamProvider filters by managerId
+    // and returns empty for caregivers).
     PatientModel? activePatient;
-    if (activeId != null) {
-      final matches = allPatients.where((p) => p.patientId == activeId);
-      if (matches.isNotEmpty) activePatient = matches.first;
+    if (trackingOnly && activeId != null) {
+      activePatient =
+          ref.watch(patientDocStreamProvider(activeId)).valueOrNull;
+    } else {
+      final allPatients =
+          ref.watch(patientsStreamProvider).valueOrNull ?? [];
+      if (activeId != null) {
+        final matches = allPatients.where((p) => p.patientId == activeId);
+        if (matches.isNotEmpty) activePatient = matches.first;
+      }
     }
 
     // Derived data — empty/zero when no patient selected
@@ -89,16 +117,19 @@ class HomeScreen extends ConsumerWidget {
     final nextDose =
         activeId != null ? ref.watch(nextDoseProvider(activeId)) : null;
 
+    // Countdown label for the SmartActionCard ("2h 15m", "45m", …).
+    // Recomputed each build since the home screen rebuilds every minute
+    // via the minuteTickProvider dependency chain.
+    final countdownLabel = _countdownLabel(nextDose);
+
     final adherencePct =
         adherence.total == 0 ? 0.0 : adherence.taken / adherence.total;
 
-    // Care circle data — only needed in full (non-tracking) mode
+    // Care circle data — all UIDs in accessList from the patient's own document.
+    // Uses selfPatientDocProvider (direct doc read) which is always up-to-date
+    // and avoids depending on the managerId-query-based patientsStreamProvider.
     final caregiverIds = !trackingOnly
-        ? allPatients
-            .where((p) => p.caregiverId != null && p.caregiverId!.isNotEmpty)
-            .map((p) => p.caregiverId!)
-            .toSet()
-            .toList()
+        ? (selfPatientDoc?.accessList ?? [])
         : <String>[];
 
     return Scaffold(
@@ -166,6 +197,10 @@ class HomeScreen extends ConsumerWidget {
                           children: [
                             _HeaderIcon(
                               icon: Icons.notifications_none_rounded,
+                              badgeCount: ref
+                                  .watch(notificationHistoryProvider)
+                                  .where((n) => !n.isRead)
+                                  .length,
                               onTap: () {
                                 HapticFeedback.lightImpact();
                                 context.push('/notifications');
@@ -288,7 +323,13 @@ class HomeScreen extends ConsumerWidget {
                             SmartActionCard(
                               medName: nextDose?.medName,
                               time: nextDose?.time,
-                              onDone: nextDose != null && activeId != null
+                              isDue: nextDose?.isDue ?? false,
+                              countdownLabel: countdownLabel,
+                              // Only allow marking done when the dose is
+                              // actually due — prevents pre-emptive logging.
+                              onDone: (nextDose?.isDue ?? false) &&
+                                      nextDose != null &&
+                                      activeId != null
                                   ? () => _markDone(ref, activeId, nextDose)
                                   : null,
                             )
@@ -423,21 +464,50 @@ class HomeScreen extends ConsumerWidget {
                   // ═══════════════════════════════════════════════════════════
                   if (!trackingOnly) ...[
                     SosSlider(
-                      onTriggered: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'SOS alert sent!',
-                              style: GoogleFonts.inter(color: Colors.white),
+                      onTriggered: () async {
+                        // Write isSosActive to Firestore so caregivers
+                        // watching patientLiveDataProvider are notified.
+                        final patientId = selfId;
+                        if (patientId != null) {
+                          await FirebaseFirestore.instance
+                              .collection('patients')
+                              .doc(patientId)
+                              .set(
+                            {
+                              'isSosActive': true,
+                              'sosTriggerTime':
+                                  FieldValue.serverTimestamp(),
+                            },
+                            SetOptions(merge: true),
+                          );
+                        }
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'SOS alert sent!',
+                                style: GoogleFonts.inter(color: Colors.white),
+                              ),
+                              backgroundColor: const Color(0xFFEF4444),
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12.r)),
                             ),
-                            backgroundColor: const Color(0xFFEF4444),
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12.r)),
-                          ),
-                        );
+                          );
+                        }
                       },
                     ).animate().fadeIn(duration: 400.ms, delay: 480.ms),
+
+                    SizedBox(height: 16.h),
+
+                    // ═══════════════════════════════════════════════════════
+                    // ACCESS CODE CARD — full mode only
+                    // Direct doc stream so it appears even before the
+                    // patientsStreamProvider query resolves.
+                    // ═══════════════════════════════════════════════════════
+                    AccessCodeCard(patient: selfPatientDoc)
+                        .animate()
+                        .fadeIn(duration: 400.ms, delay: 500.ms),
 
                     SizedBox(height: 20.h),
 
@@ -477,7 +547,15 @@ class HomeScreen extends ConsumerWidget {
                           icon: Icons.assignment_outlined,
                           label: 'View\nReports',
                           color: const Color(0xFF7C3AED),
-                          onTap: () => HapticFeedback.lightImpact(),
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            if (activeId != null) {
+                              context.push(
+                                '/patient/$activeId/report',
+                                extra: authUser?.displayName ?? 'Patient',
+                              );
+                            }
+                          },
                         ),
                       ],
                     ).animate().fadeIn(duration: 400.ms, delay: 560.ms),
@@ -490,6 +568,7 @@ class HomeScreen extends ConsumerWidget {
                     _CareCircleCard(caregiverIds: caregiverIds)
                         .animate()
                         .fadeIn(duration: 400.ms, delay: 600.ms),
+
                   ],
 
                   // ═══════════════════════════════════════════════════════════
@@ -498,7 +577,7 @@ class HomeScreen extends ConsumerWidget {
                   // Data is scoped strictly to this patientId via the
                   // ProviderScope override in ManagerPatientViewScreen.
                   // ═══════════════════════════════════════════════════════════
-                  if (trackingOnly) ...[
+                  if (trackingOnly && showCaregiverCard) ...[
                     SizedBox(height: 4.h),
                     _AssignedCaregiverCard(
                       caregiverId: activePatient?.caregiverId,
@@ -512,6 +591,25 @@ class HomeScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Returns a human-readable countdown string ("2h 15m", "45m") until
+  /// the given [entry]'s scheduled time, or null if already due / no entry.
+  String? _countdownLabel(PillTimelineEntry? entry) {
+    if (entry == null || entry.isDue) return null;
+    final parts = entry.rawTime.split(':');
+    if (parts.length != 2) return null;
+    final doseMinutes =
+        (int.tryParse(parts[0]) ?? 0) * 60 + (int.tryParse(parts[1]) ?? 0);
+    final now = DateTime.now();
+    final nowMinutes = now.hour * 60 + now.minute;
+    final diff = doseMinutes - nowMinutes;
+    if (diff <= 0) return null;
+    final h = diff ~/ 60;
+    final m = diff % 60;
+    if (h > 0 && m > 0) return '${h}h ${m}m';
+    if (h > 0) return '${h}h';
+    return '${m}m';
   }
 
   Widget _buildAvatarFallback(String firstName) {
@@ -533,27 +631,47 @@ class HomeScreen extends ConsumerWidget {
   void _markDone(WidgetRef ref, String patientId, PillTimelineEntry entry) {
     HapticFeedback.lightImpact();
     ref.read(medicationRepositoryProvider).markDoseTaken(
-          patientId: patientId,
-          medId: entry.medId,
-          medName: entry.medName,
+          patientId:    patientId,
+          medId:        entry.medId,
+          medName:      entry.medName,
           reminderTime: entry.rawTime,
         );
+    // Cancel all four daily alerts (early-warning, at-time, overdue, SOS)
+    // for today.  The recurring schedule re-arms automatically tomorrow.
+    NotificationService.cancelDoseAlerts(
+      medId:        entry.medId,
+      reminderTime: entry.rawTime,
+    );
   }
 
   void _toggleDose(WidgetRef ref, String patientId, PillTimelineEntry entry) {
     if (entry.isTaken) {
+      // ── Unmark: dose log removed → re-arm all four daily alerts ──────────
       ref.read(medicationRepositoryProvider).unmarkDoseTaken(
-            patientId: patientId,
-            medId: entry.medId,
+            patientId:    patientId,
+            medId:        entry.medId,
             reminderTime: entry.rawTime,
           );
+      // Re-schedule the full escalation stack so overdue/SOS will fire
+      // if the patient doesn't re-confirm the dose.
+      NotificationService.scheduleDoseAlerts(
+        medId:        entry.medId,
+        medName:      entry.medName,
+        dosage:       entry.dosage,
+        reminderTime: entry.rawTime,
+      ).catchError((_) {});
     } else {
+      // ── Mark taken: write Firestore + silence all alerts ─────────────────
       ref.read(medicationRepositoryProvider).markDoseTaken(
-            patientId: patientId,
-            medId: entry.medId,
-            medName: entry.medName,
+            patientId:    patientId,
+            medId:        entry.medId,
+            medName:      entry.medName,
             reminderTime: entry.rawTime,
           );
+      NotificationService.cancelDoseAlerts(
+        medId:        entry.medId,
+        reminderTime: entry.rawTime,
+      );
     }
   }
 }
@@ -1095,28 +1213,63 @@ class _AccessInfoSheet extends ConsumerWidget {
 class _HeaderIcon extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
+  final int badgeCount;
 
-  const _HeaderIcon({required this.icon, required this.onTap});
+  const _HeaderIcon({
+    required this.icon,
+    required this.onTap,
+    this.badgeCount = 0,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        height: 42.w,
-        width: 42.w,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14.r),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            height: 42.w,
+            width: 42.w,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14.r),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: Icon(icon, size: 22.w, color: const Color(0xFF64748B)),
+            child: Icon(icon, size: 22.w, color: const Color(0xFF64748B)),
+          ),
+          if (badgeCount > 0)
+            Positioned(
+              top: -4,
+              right: -4,
+              child: Container(
+                height: badgeCount > 9 ? 18.w : 16.w,
+                constraints: BoxConstraints(minWidth: 16.w),
+                padding: EdgeInsets.symmetric(horizontal: 4.w),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444),
+                  borderRadius: BorderRadius.circular(20.r),
+                  border: Border.all(color: Colors.white, width: 1.5),
+                ),
+                child: Center(
+                  child: Text(
+                    badgeCount > 99 ? '99+' : '$badgeCount',
+                    style: GoogleFonts.inter(
+                      fontSize: 9.sp,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -13,13 +13,19 @@ import '../../features/auth/presentation/screens/signup_screen.dart';
 import '../../features/auth/presentation/screens/role_selection_screen.dart';
 import '../../features/patient/presentation/screens/patient_details_screen.dart';
 import '../../features/patient/presentation/screens/add_medication_screen.dart';
+import '../../features/patient/data/models/medication_model.dart';
 import '../../features/patient/presentation/screens/patient_management_screen.dart';
 import '../../features/patient/presentation/screens/profile_screen.dart';
+import '../../features/patient/presentation/screens/report_screen.dart';
 import '../../features/notifications/presentation/screens/notification_history_screen.dart';
 import '../../features/caregiver/presentation/screens/caregiver_onboarding_screen.dart';
 import '../../features/caregiver/presentation/screens/caregiver_alerts_screen.dart';
 import '../../features/caregiver/presentation/screens/pending_deals_screen.dart';
+import '../../features/caregiver/presentation/screens/caregiver_patient_view_screen.dart';
+import '../../features/caregiver/presentation/providers/caregiver_provider.dart';
 import '../../features/manager/presentation/screens/manager_patient_view_screen.dart';
+import '../../features/manager/presentation/screens/manager_notifications_screen.dart';
+import '../../features/family/presentation/screens/family_notifications_screen.dart';
 import '../../shared/navigation/main_wrapper.dart';
 import '../services/preferences_service.dart';
 
@@ -33,15 +39,22 @@ class _RouterNotifier extends ChangeNotifier {
       debugPrint('DEBUG ROUTER: userData changed');
       notifyListeners();
     });
+    // Re-evaluate redirect whenever the pro-caregiver's onboarding status
+    // changes (e.g. profile doc is created after the stream first fires).
+    _onboardingSub = ref.listen(caregiverProfileProvider, (_, _) {
+      notifyListeners();
+    });
   }
 
   late final ProviderSubscription _authSub;
   late final ProviderSubscription _userSub;
+  late final ProviderSubscription _onboardingSub;
 
   @override
   void dispose() {
     _authSub.close();
     _userSub.close();
+    _onboardingSub.close();
     super.dispose();
   }
 }
@@ -96,13 +109,32 @@ final routerProvider = Provider<GoRouter>((ref) {
         return '/dashboard';
       }
 
-      // CASE 4: Role-specific guards
+      // CASE 4: Pro-caregiver onboarding guard
+      if (role == UserRole.proCaregiver) {
+        final profileAsync = ref.read(caregiverProfileProvider);
+        // Profile not yet loaded from Firestore — hold position and wait for
+        // the _RouterNotifier subscription to re-fire once it arrives.
+        if (!profileAsync.hasValue) return null;
+        final done = profileAsync.valueOrNull?.onboardingComplete ?? false;
+        // Block dashboard until setup is complete.
+        if (!done && currentPath == '/dashboard') {
+          return '/caregiver/onboarding';
+        }
+        // Already completed — never re-enter onboarding.
+        if (done && currentPath == '/caregiver/onboarding') {
+          return '/dashboard';
+        }
+      }
 
-      // add-med is write access — only patients (own data) and managers
-      // (managed patient data) are allowed. Family / pro-caregiver roles are
-      // read-only observers and must never write medication records.
+      // CASE 5: Role-specific guards
+
+      // add-med is write access — patients (own data), managers (managed
+      // patient data), and pro-caregivers (assigned patients) are allowed.
+      // Family role is read-only and must never write medication records.
       if (currentPath.endsWith('/add-med')) {
-        if (role != UserRole.patient && role != UserRole.manager) {
+        if (role != UserRole.patient &&
+            role != UserRole.manager &&
+            role != UserRole.proCaregiver) {
           return '/dashboard';
         }
       }
@@ -160,6 +192,18 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/patient/:id/add-med',
         builder: (context, state) => AddMedicationScreen(
           patientId: state.pathParameters['id']!,
+          existing: state.extra is MedicationModel
+              ? state.extra as MedicationModel
+              : null,
+        ),
+      ),
+      GoRoute(
+        path: '/patient/:id/report',
+        builder: (context, state) => ReportScreen(
+          patientId: state.pathParameters['id']!,
+          patientName: state.extra is String
+              ? state.extra as String
+              : 'Patient',
         ),
       ),
       GoRoute(
@@ -184,6 +228,14 @@ final routerProvider = Provider<GoRouter>((ref) {
           patientId: state.pathParameters['id']!,
         ),
       ),
+      GoRoute(
+        path: '/manager/notifications',
+        builder: (context, state) => const ManagerNotificationsScreen(),
+      ),
+      GoRoute(
+        path: '/family/notifications',
+        builder: (context, state) => const FamilyNotificationsScreen(),
+      ),
 
       // ── Caregiver / Family shared routes ────────────────────────────────
       GoRoute(
@@ -200,9 +252,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/caregiver/patient/:id',
-        builder: (context, state) => PatientDetailsScreen(
+        builder: (context, state) => CaregiverPatientViewScreen(
           patientId: state.pathParameters['id']!,
-          readOnly: true,
         ),
       ),
     ],

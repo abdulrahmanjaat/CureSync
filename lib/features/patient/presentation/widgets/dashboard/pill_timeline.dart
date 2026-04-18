@@ -6,18 +6,34 @@ import 'package:google_fonts/google_fonts.dart';
 import 'bento_card.dart';
 
 class PillTimelineEntry {
-  final String rawTime; // "HH:mm" for sorting/comparison
-  final String time;    // formatted display "8:00 AM"
+  final String rawTime;    // "HH:mm" for sorting/comparison
+  final String time;       // formatted display "8:00 AM"
   final String medId;
   final String medName;
+  /// Dosage string (e.g. "500mg"). Needed when re-scheduling alerts after
+  /// an unmark-done action in [_toggleDose].
+  final String dosage;
   final bool isTaken;
+  /// True when the clock is inside [scheduledTime, windowEnd).
+  /// Only when [isDue] is true may a dose be confirmed.
+  final bool isDue;
+  /// True when the grace window has fully elapsed and the dose was never taken.
+  /// Computed in [todayPillTimelineProvider] every minute.
+  final bool isMissed;
+  /// Server timestamp recorded when the dose was taken, sourced from
+  /// [DoseLogModel.takenAt]. Null for untaken doses.
+  final DateTime? takenAt;
 
   const PillTimelineEntry({
     required this.rawTime,
     required this.time,
     required this.medId,
     required this.medName,
+    required this.dosage,
     required this.isTaken,
+    this.isDue = false,
+    this.isMissed = false,
+    this.takenAt,
   });
 }
 
@@ -79,16 +95,38 @@ class PillTimeline extends StatelessWidget {
               children: List.generate(entries.take(6).length, (i) {
                 final e = entries[i];
                 final displayEntries = entries.take(6).toList();
-                final tealColor = const Color(0xFF0D9488);
-                final coralColor = const Color(0xFFFF6B6B);
-                final color = e.isTaken ? tealColor : coralColor;
+                const tealColor   = Color(0xFF0D9488);
+                const coralColor  = Color(0xFFFF6B6B);
+                const redColor    = Color(0xFFEF4444);
+                const lockColor   = Color(0xFFCBD5E1);
+
+                // Colour logic:
+                //  • taken          → teal
+                //  • due (not taken) → coral
+                //  • missed         → red
+                //  • future (locked) → slate-300
+                final Color color;
+                if (e.isTaken) {
+                  color = tealColor;
+                } else if (e.isMissed) {
+                  color = redColor;
+                } else if (e.isDue) {
+                  color = coralColor;
+                } else {
+                  color = lockColor;
+                }
+
+                // Missed and due entries are interactive; future entries are not
+                final bool interactive = e.isTaken || e.isDue || e.isMissed;
 
                 return Expanded(
                   child: GestureDetector(
-                    onTap: () {
-                      HapticFeedback.lightImpact();
-                      onToggle?.call(e);
-                    },
+                    onTap: interactive
+                        ? () {
+                            HapticFeedback.lightImpact();
+                            onToggle?.call(e);
+                          }
+                        : null,
                     child: Column(
                       children: [
                         /// Time
@@ -103,7 +141,7 @@ class PillTimeline extends StatelessWidget {
                         ),
                         SizedBox(height: 8.h),
 
-                        /// Track with pill dot
+                        /// Track with pill dot / lock icon
                         Row(
                           children: [
                             if (i > 0)
@@ -123,9 +161,11 @@ class PillTimeline extends StatelessWidget {
                               width: 28.w,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: e.isTaken
-                                    ? color
-                                    : color.withValues(alpha: 0.1),
+                                color: interactive
+                                    ? (e.isTaken
+                                        ? color
+                                        : color.withValues(alpha: 0.1))
+                                    : lockColor.withValues(alpha: 0.15),
                                 border: e.isTaken
                                     ? null
                                     : Border.all(
@@ -133,18 +173,28 @@ class PillTimeline extends StatelessWidget {
                                         width: 2),
                               ),
                               child: e.isTaken
+                                  // Taken: check mark
                                   ? Icon(Icons.check_rounded,
                                       size: 16.w, color: Colors.white)
-                                  : Center(
-                                      child: Container(
-                                        height: 8.w,
-                                        width: 8.w,
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          color: coralColor,
-                                        ),
-                                      ),
-                                    ),
+                                  : e.isMissed
+                                      // Missed: X icon
+                                      ? Icon(Icons.close_rounded,
+                                          size: 14.w, color: redColor)
+                                      : e.isDue
+                                          // Due: pulsing dot
+                                          ? Center(
+                                              child: Container(
+                                                height: 8.w,
+                                                width: 8.w,
+                                                decoration: BoxDecoration(
+                                                  shape: BoxShape.circle,
+                                                  color: coralColor,
+                                                ),
+                                              ),
+                                            )
+                                          // Future: lock icon
+                                          : Icon(Icons.lock_rounded,
+                                              size: 12.w, color: lockColor),
                             ),
                             if (i < displayEntries.length - 1)
                               Expanded(
@@ -160,9 +210,15 @@ class PillTimeline extends StatelessWidget {
                         ),
                         SizedBox(height: 6.h),
 
-                        /// Status
+                        /// Status label
                         Text(
-                          e.isTaken ? 'Taken' : 'Due',
+                          e.isTaken
+                              ? 'Taken'
+                              : e.isMissed
+                                  ? 'Missed'
+                                  : e.isDue
+                                      ? 'Due'
+                                      : 'Soon',
                           style: GoogleFonts.inter(
                             fontSize: 9.sp,
                             fontWeight: FontWeight.w600,
