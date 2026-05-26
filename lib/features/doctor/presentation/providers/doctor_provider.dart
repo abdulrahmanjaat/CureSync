@@ -1,7 +1,9 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../data/models/appointment_model.dart';
+import '../../data/models/doctor_model.dart';
 import '../../data/models/prescription_model.dart';
 import '../../data/repositories/doctor_repository.dart';
 
@@ -9,6 +11,26 @@ import '../../data/repositories/doctor_repository.dart';
 
 final _doctorUidProvider = Provider<String>((ref) {
   return ref.watch(authStateProvider).valueOrNull?.uid ?? '';
+});
+
+// ── Doctor own profile stream (pro_doctors/{uid}) ─────────────────────────────
+//
+// Single source of truth for the signed-in doctor's work profile. The router
+// listens to this to gate dashboard access until onboarding is complete.
+//
+// • autoDispose:  released when no live listeners remain. The router keeps it
+//                 alive while a doctor is signed in; on sign-out it drops.
+// • Role guard:   `uid.isEmpty` short-circuits to an empty stream so a logged
+//                 -out or wrong-role user cannot trigger a Firestore read.
+final doctorProfileProvider =
+    StreamProvider.autoDispose<DoctorModel?>((ref) {
+  final uid = ref.watch(_doctorUidProvider);
+  if (uid.isEmpty) return const Stream.empty();
+  return FirebaseFirestore.instance
+      .collection('pro_doctors')
+      .doc(uid)
+      .snapshots()
+      .map((doc) => doc.exists ? DoctorModel.fromFirestore(doc) : null);
 });
 
 // ── Today's appointments ──────────────────────────────────────────────────────

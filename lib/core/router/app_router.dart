@@ -23,6 +23,10 @@ import '../../features/caregiver/presentation/screens/caregiver_alerts_screen.da
 import '../../features/caregiver/presentation/screens/pending_deals_screen.dart';
 import '../../features/caregiver/presentation/screens/caregiver_patient_view_screen.dart';
 import '../../features/caregiver/presentation/providers/caregiver_provider.dart';
+import '../../features/doctor/presentation/screens/doctor_dashboard_screen.dart';
+import '../../features/doctor/presentation/screens/doctor_appointments_screen.dart';
+import '../../features/doctor/presentation/screens/doctor_prescriptions_screen.dart';
+import '../../features/doctor/presentation/providers/doctor_provider.dart';
 import '../../features/manager/presentation/screens/manager_patient_view_screen.dart';
 import '../../features/manager/presentation/screens/manager_notifications_screen.dart';
 import '../../features/family/presentation/screens/family_notifications_screen.dart';
@@ -44,17 +48,24 @@ class _RouterNotifier extends ChangeNotifier {
     _onboardingSub = ref.listen(caregiverProfileProvider, (_, _) {
       notifyListeners();
     });
+    // Same lifecycle hook for the doctor profile — flips the dashboard gate
+    // open the moment pro_doctors/{uid}.onboardingComplete becomes true.
+    _doctorOnboardingSub = ref.listen(doctorProfileProvider, (_, _) {
+      notifyListeners();
+    });
   }
 
   late final ProviderSubscription _authSub;
   late final ProviderSubscription _userSub;
   late final ProviderSubscription _onboardingSub;
+  late final ProviderSubscription _doctorOnboardingSub;
 
   @override
   void dispose() {
     _authSub.close();
     _userSub.close();
     _onboardingSub.close();
+    _doctorOnboardingSub.close();
     super.dispose();
   }
 }
@@ -99,8 +110,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       // CASE 2: Logged in but NO role assigned yet
       if (role == null) {
         if (currentPath == '/role-selection') return null;
-        // Pro-caregiver onboarding is accessible before role is confirmed
+        // Onboarding flows are reachable before the role doc is finalised so
+        // the user can complete role-specific setup atomically with selection.
         if (currentPath == '/caregiver/onboarding') return null;
+        if (currentPath == '/doctor/onboarding')    return null;
         return '/role-selection';
       }
 
@@ -126,11 +139,28 @@ final routerProvider = Provider<GoRouter>((ref) {
         }
       }
 
+      // CASE 4b: Doctor onboarding guard — mirrors the pro-caregiver flow.
+      // Block dashboard until pro_doctors/{uid}.onboardingComplete=true so a
+      // half-configured doctor (no specialty / no license) can never appear in
+      // the Discovery Hub or accept appointments.
+      if (role == UserRole.doctor) {
+        final profileAsync = ref.read(doctorProfileProvider);
+        if (!profileAsync.hasValue) return null;
+        final done = profileAsync.valueOrNull?.onboardingComplete ?? false;
+        if (!done && currentPath == '/dashboard') {
+          return '/doctor/onboarding';
+        }
+        if (done && currentPath == '/doctor/onboarding') {
+          return '/dashboard';
+        }
+      }
+
       // CASE 5: Role-specific guards
 
       // add-med is write access — patients (own data), managers (managed
       // patient data), and pro-caregivers (assigned patients) are allowed.
-      // Family role is read-only and must never write medication records.
+      // Family is read-only. Doctors write *prescriptions*, never raw med
+      // entries on the patient record — keep them out of this surface.
       if (currentPath.endsWith('/add-med')) {
         if (role != UserRole.patient &&
             role != UserRole.manager &&
@@ -140,9 +170,18 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       // Only Patient and Manager may access the discovery hub.
+      // Doctors / caregivers / family must never browse the hub.
       if (currentPath == '/discovery' &&
           role != UserRole.patient &&
           role != UserRole.manager) {
+        return '/dashboard';
+      }
+
+      // CASE 6: Hard isolation — `/doctor/*` is doctor-only territory.
+      // Excludes /doctor/onboarding (handled above in CASE 2 / CASE 4b).
+      if (currentPath.startsWith('/doctor/') &&
+          currentPath != '/doctor/onboarding' &&
+          role != UserRole.doctor) {
         return '/dashboard';
       }
 
@@ -256,6 +295,49 @@ final routerProvider = Provider<GoRouter>((ref) {
           patientId: state.pathParameters['id']!,
         ),
       ),
+
+      // ── Doctor routes (role-isolated by CASE 6 guard above) ─────────────
+      GoRoute(
+        path: '/doctor',
+        builder: (context, state) => const DoctorDashboardScreen(),
+      ),
+      GoRoute(
+        // TODO(doctor-onboarding): swap placeholder for DoctorOnboardingScreen
+        //   once the clinician onboarding UI lands. Until then the guard at
+        //   CASE 4b keeps doctors stuck here, so this MUST remain reachable.
+        path: '/doctor/onboarding',
+        builder: (context, state) => const _DoctorOnboardingPlaceholder(),
+      ),
+      GoRoute(
+        path: '/doctor/appointments',
+        builder: (context, state) => const DoctorAppointmentsScreen(),
+      ),
+      GoRoute(
+        path: '/doctor/prescriptions',
+        builder: (context, state) => const DoctorPrescriptionsScreen(),
+      ),
     ],
   );
 });
+
+// Temporary placeholder — replaced once the real onboarding UI exists.
+// Kept inside app_router.dart so removal is a single-file change.
+class _DoctorOnboardingPlaceholder extends StatelessWidget {
+  const _DoctorOnboardingPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'Doctor onboarding UI lands next sprint.\n'
+            'Router gate is wired — fill in specialty, license, and fees here.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ),
+    );
+  }
+}

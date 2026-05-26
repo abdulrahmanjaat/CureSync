@@ -1,7 +1,15 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Hard-separated roles — each maps to a distinct UI and permission set.
-enum UserRole { patient, family, proCaregiver, manager, doctor, pharmacy }
+/// Hard-separated roles — each maps to a distinct UI surface and permission
+/// set. No role may render, query, or write data belonging to another role.
+///
+/// Role matrix (5-tier, final):
+///   • patient       → owns own medical record
+///   • manager       → administers one or more patient records
+///   • proCaregiver  → professional, paid, discoverable via Discovery Hub
+///   • family        → read-only observer linked via access code
+///   • doctor        → clinician — writes prescriptions, manages appointments
+enum UserRole { patient, family, proCaregiver, manager, doctor }
 
 extension UserRoleX on UserRole {
   String get firestoreValue => switch (this) {
@@ -10,7 +18,6 @@ extension UserRoleX on UserRole {
         UserRole.proCaregiver => 'pro_caregiver',
         UserRole.manager      => 'manager',
         UserRole.doctor       => 'doctor',
-        UserRole.pharmacy     => 'pharmacy',
       };
 
   static UserRole? fromString(String? v) => switch (v) {
@@ -19,7 +26,6 @@ extension UserRoleX on UserRole {
         'pro_caregiver' => UserRole.proCaregiver,
         'manager'       => UserRole.manager,
         'doctor'        => UserRole.doctor,
-        'pharmacy'      => UserRole.pharmacy,
         _               => null,
       };
 }
@@ -31,5 +37,7 @@ class RoleNotifier extends StateNotifier<UserRole?> {
   void clear() => state = null;
 }
 
-final roleProvider =
-    StateNotifierProvider<RoleNotifier, UserRole?>((ref) => RoleNotifier());
+/// autoDispose: role selection is a transient flow — reset between sessions.
+final roleProvider = StateNotifierProvider.autoDispose<RoleNotifier, UserRole?>(
+  (ref) => RoleNotifier(),
+);

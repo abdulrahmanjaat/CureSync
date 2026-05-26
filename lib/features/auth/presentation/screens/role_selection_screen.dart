@@ -74,14 +74,6 @@ const _nodes = [
     role: UserRole.doctor,
     color: Color(0xFF4338CA),
   ),
-  _Node(
-    id: 'pharmacy',
-    label: 'Pharmacy',
-    icon: Icons.local_pharmacy_rounded,
-    description: 'Process prescriptions, manage medication inventory and track dispensing.',
-    role: UserRole.pharmacy,
-    color: Color(0xFFEA580C),
-  ),
 ];
 
 // ═══════════════════════════════════════════════════════════════════
@@ -144,6 +136,9 @@ class _RoleSelectionScreenState extends ConsumerState<RoleSelectionScreen>
     if (_selected!.id == 'pro_caregiver') {
       // Pro-Caregiver goes to onboarding to set rates + specializations
       context.go('/caregiver/onboarding');
+    } else if (_selected!.id == 'doctor') {
+      // Doctor goes to clinician onboarding (specialty, license, fees)
+      context.go('/doctor/onboarding');
     } else {
       // Patient, Family, and Manager go directly to their dashboard
       context.go('/dashboard');

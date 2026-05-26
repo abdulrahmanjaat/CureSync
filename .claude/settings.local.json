@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter analyze *)",
+      "PowerShell(flutter analyze lib/core/router/app_router.dart lib/features/doctor lib/features/auth/presentation/providers/role_provider.dart lib/features/auth/presentation/screens/role_selection_screen.dart 2>&1)"
+    ]
+  }
+}
